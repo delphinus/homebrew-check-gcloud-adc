@@ -10,6 +10,9 @@ class CheckGcloudAdc < Formula
   depends_on :macos
 
   def install
+    system "swiftc", "-emit-library", "-static", "-emit-module",
+           "-module-name", "Notification",
+           "-o", "libnotification.a", "notification.swift"
     ENV["CGO_ENABLED"] = "1"
     system "go", "build", "-o", "check-gcloud-adc", "."
 

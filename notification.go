@@ -1,9 +1,7 @@
 package main
 
 /*
-#cgo CFLAGS: -x objective-c
-#cgo LDFLAGS: -framework Foundation -framework AppKit -framework UserNotifications
-
+#cgo LDFLAGS: -L${SRCDIR} -lnotification -framework Foundation -framework AppKit -framework UserNotifications
 #include <stdlib.h>
 #include "notification.h"
 */

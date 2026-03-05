@@ -8,39 +8,51 @@ import (
 	"path/filepath"
 )
 
-func flagDir() string {
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		cacheDir = filepath.Join(os.Getenv("HOME"), ".cache")
-	}
-	return filepath.Join(cacheDir, "check-gcloud-adc")
+type macNotifier struct{}
+
+func (n *macNotifier) send(title, message string, isTest bool) {
+	sendNotification(title, message, isTest)
 }
 
-func flagFile() string {
-	return filepath.Join(flagDir(), "notified")
-}
+type gcloudADCChecker struct{}
 
-func isNotified() bool {
-	_, err := os.Stat(flagFile())
-	return err == nil
-}
-
-func setNotified() error {
-	if err := os.MkdirAll(flagDir(), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(flagFile(), []byte{}, 0o644)
-}
-
-func clearNotified() {
-	os.Remove(flagFile())
-}
-
-func checkADC() bool {
+func (c *gcloudADCChecker) check() bool {
 	cmd := exec.Command("gcloud", "auth", "application-default", "print-access-token", "--quiet")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	return cmd.Run() == nil
+}
+
+type fileStateStore struct {
+	dir string
+}
+
+func newFileStateStore() *fileStateStore {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		cacheDir = filepath.Join(os.Getenv("HOME"), ".cache")
+	}
+	return &fileStateStore{dir: filepath.Join(cacheDir, "check-gcloud-adc")}
+}
+
+func (s *fileStateStore) flagFile() string {
+	return filepath.Join(s.dir, "notified")
+}
+
+func (s *fileStateStore) isNotified() bool {
+	_, err := os.Stat(s.flagFile())
+	return err == nil
+}
+
+func (s *fileStateStore) setNotified() error {
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(s.flagFile(), []byte{}, 0o644)
+}
+
+func (s *fileStateStore) clearNotified() {
+	os.Remove(s.flagFile())
 }
 
 func main() {
@@ -62,41 +74,21 @@ func main() {
 		os.Exit(0)
 	}
 
+	a := &app{
+		notifier:   &macNotifier{},
+		adcChecker: &gcloudADCChecker{},
+		state:      newFileStateStore(),
+	}
+
 	if *reset {
-		clearNotified()
-		fmt.Println("Cleared notification state.")
-		fmt.Println("Opening System Settings > Notifications...")
-		fmt.Println("Tip: Set the notification style to \"Alerts\" so notifications stay until clicked.")
-		cmd := exec.Command("open", "x-apple.systempreferences:com.apple.Notifications-Settings")
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to open System Settings: %v\n", err)
-			os.Exit(1)
-		}
+		a.runReset()
 		return
 	}
 
 	if *test {
-		sendNotification("Test Notification", "Notifications are working!", true)
+		a.runTest()
 		return
 	}
 
-	if checkADC() {
-		clearNotified()
-		return
-	}
-
-	// ADC is invalid
-	if isNotified() {
-		return
-	}
-
-	sendNotification(
-		"Google Cloud ADC Expired",
-		"Click to re-authenticate with gcloud auth login --update-adc",
-		false,
-	)
-
-	if err := setNotified(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to set notified flag: %v\n", err)
-	}
+	a.runCheck()
 }
