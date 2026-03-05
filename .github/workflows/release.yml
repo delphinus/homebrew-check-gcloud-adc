@@ -29,9 +29,9 @@ jobs:
 
       - name: Archive
         run: |
-          mkdir check-gcloud-adc
-          mv check-gcloud-adc.app check-gcloud-adc/
-          tar czf check-gcloud-adc.tar.gz check-gcloud-adc
+          mkdir -p pkg/check-gcloud-adc
+          mv check-gcloud-adc.app pkg/check-gcloud-adc/
+          tar czf check-gcloud-adc.tar.gz -C pkg check-gcloud-adc
 
       - name: Create release
         env:
