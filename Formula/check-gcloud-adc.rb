@@ -1,30 +1,15 @@
 class CheckGcloudAdc < Formula
   desc "Check Google Cloud ADC token validity and notify when expired"
   homepage "https://github.com/delphinus/homebrew-check-gcloud-adc"
-  url "https://github.com/delphinus/homebrew-check-gcloud-adc/archive/refs/tags/v1.1.0.tar.gz"
-  sha256 "59f1a7d4c6fa5dc2112922546b6f69b7160e5291161e45b0b73cd3ed4c91a372"
-  version "1.1.0"
-  head "https://github.com/delphinus/homebrew-check-gcloud-adc.git", branch: "main"
+  url "https://github.com/delphinus/homebrew-check-gcloud-adc/releases/download/v1.2.0/check-gcloud-adc.tar.gz"
+  sha256 "34a2fc680b83953051bfca895fcfa7fc818fef4955a73c794d93cb00e9758208"
+  version "1.2.0"
 
-  depends_on "go" => :build
   depends_on :macos
 
   def install
-    system "swiftc", "-emit-library", "-static", "-emit-module",
-           "-module-name", "Notification",
-           "-o", "libnotification.a", "notification.swift"
-    ENV["CGO_ENABLED"] = "1"
-    system "go", "build", "-o", "check-gcloud-adc", "."
-
-    app = prefix/"check-gcloud-adc.app/Contents"
-    (app/"MacOS").install "check-gcloud-adc"
-    app.install "Info.plist"
-
-    system "codesign", "--force", "--sign", "-",
- "--identifier", "com.delphinus.check-gcloud-adc",
- prefix/"check-gcloud-adc.app"
-
-    bin.write_exec_script app/"MacOS/check-gcloud-adc"
+    prefix.install "check-gcloud-adc.app"
+    bin.write_exec_script prefix/"check-gcloud-adc.app/Contents/MacOS/check-gcloud-adc"
   end
 
   service do
@@ -37,6 +22,6 @@ class CheckGcloudAdc < Formula
   end
 
   test do
-    assert_match "Check Google Cloud ADC token validity", shell_output("#{bin}/check-gcloud-adc --help")
+    assert_match "Check Google Cloud ADC token validity", shell_output("\#{bin}/check-gcloud-adc --help")
   end
 end
