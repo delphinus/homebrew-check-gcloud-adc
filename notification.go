@@ -2,7 +2,7 @@ package main
 
 /*
 #cgo CFLAGS: -x objective-c
-#cgo LDFLAGS: -framework Foundation -framework AppKit
+#cgo LDFLAGS: -framework Foundation -framework UserNotifications
 
 #include <stdlib.h>
 #include "notification.h"

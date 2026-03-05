@@ -45,6 +45,7 @@ func checkADC() bool {
 
 func main() {
 	help := flag.Bool("help", false, "show help")
+	test := flag.Bool("test", false, "send a test notification (skips ADC check)")
 	flag.Parse()
 
 	if *help {
@@ -55,7 +56,13 @@ func main() {
 		fmt.Println()
 		fmt.Println("Flags:")
 		fmt.Println("  --help  show this help message")
+		fmt.Println("  --test  send a test notification (skips ADC check)")
 		os.Exit(0)
+	}
+
+	if *test {
+		sendNotification("Test Notification", "Notifications are working!")
+		return
 	}
 
 	if checkADC() {

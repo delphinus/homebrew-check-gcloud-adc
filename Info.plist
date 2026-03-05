@@ -7,7 +7,5 @@
     <string>com.delphinus.check-gcloud-adc</string>
     <key>CFBundleName</key>
     <string>check-gcloud-adc</string>
-    <key>NSUserNotificationAlertStyle</key>
-    <string>alert</string>
 </dict>
 </plist>
