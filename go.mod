@@ -1,3 +1,3 @@
-module github.com/delphinus/check-gcloud-adc
+module github.com/delphinus/homebrew-check-gcloud-adc
 
 go 1.24

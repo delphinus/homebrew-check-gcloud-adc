@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: ./check-gcloud-adc --help
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ github.ref_name }}" --generate-notes
+
+      - name: Update formula
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${TAG}.tar.gz"
+          curl -sL "${TARBALL_URL}" -o source.tar.gz
+          SHA256=$(shasum -a 256 source.tar.gz | awk '{print $1}')
+
+          cat > Formula/check-gcloud-adc.rb << FORMULA
+          class CheckGcloudAdc < Formula
+            desc "Check Google Cloud ADC token validity and notify when expired"
+            homepage "https://github.com/${{ github.repository }}"
+            url "${TARBALL_URL}"
+            sha256 "${SHA256}"
+            version "${VERSION}"
+            head "https://github.com/${{ github.repository }}.git", branch: "main"
+
+            depends_on "go" => :build
+            depends_on :macos
+
+            def install
+              ENV["CGO_ENABLED"] = "1"
+              system "go", "build",
+                "-ldflags", "-extldflags '-sectcreate __TEXT __info_plist #{buildpath}/Info.plist'",
+                "-o", bin/"check-gcloud-adc", "."
+            end
+
+            service do
+              run opt_bin/"check-gcloud-adc"
+              run_type :interval
+              interval 300
+              environment_variables PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+              log_path var/"log/check-gcloud-adc/output.log"
+              error_log_path var/"log/check-gcloud-adc/error.log"
+            end
+
+            test do
+              assert_match "Check Google Cloud ADC token validity", shell_output("#{bin}/check-gcloud-adc --help")
+            end
+          end
+          FORMULA
+
+          # Remove leading spaces from heredoc
+          sed -i '' 's/^          //' Formula/check-gcloud-adc.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/check-gcloud-adc.rb
+          git commit -m "Update formula for ${TAG}"
+          git push origin HEAD:main
