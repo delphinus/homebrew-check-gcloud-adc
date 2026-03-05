@@ -11,13 +11,21 @@ class CheckGcloudAdc < Formula
 
   def install
     ENV["CGO_ENABLED"] = "1"
-    system "go", "build",
-      "-ldflags", "-extldflags '-sectcreate __TEXT __info_plist #{buildpath}/Info.plist'",
-      "-o", bin/"check-gcloud-adc", "."
+    system "go", "build", "-o", "check-gcloud-adc", "."
+
+    app = prefix/"check-gcloud-adc.app/Contents"
+    (app/"MacOS").install "check-gcloud-adc"
+    app.install "Info.plist"
+
+    system "codesign", "--force", "--sign", "-",
+           "--identifier", "com.delphinus.check-gcloud-adc",
+           prefix/"check-gcloud-adc.app"
+
+    bin.write_exec_script app/"MacOS/check-gcloud-adc"
   end
 
   service do
-    run opt_bin/"check-gcloud-adc"
+    run opt_prefix/"check-gcloud-adc.app/Contents/MacOS/check-gcloud-adc"
     run_type :interval
     interval 300
     environment_variables PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"

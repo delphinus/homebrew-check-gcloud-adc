@@ -7,5 +7,11 @@
     <string>com.delphinus.check-gcloud-adc</string>
     <key>CFBundleName</key>
     <string>check-gcloud-adc</string>
+    <key>CFBundleExecutable</key>
+    <string>check-gcloud-adc</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSUIElement</key>
+    <true/>
 </dict>
 </plist>

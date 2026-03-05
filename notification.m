@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 #import <UserNotifications/UserNotifications.h>
 
 #include "notification.h"
@@ -40,6 +41,10 @@ didReceiveNotificationResponse:(UNNotificationResponse *)response
 
 void SendNotification(const char *title, const char *message) {
     @autoreleasepool {
+        // Initialize NSApplication so the system recognizes us as an app
+        [NSApplication sharedApplication];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+
         NotificationDelegate *delegate = [[NotificationDelegate alloc] init];
         UNUserNotificationCenter *center =
             [UNUserNotificationCenter currentNotificationCenter];
