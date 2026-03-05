@@ -46,6 +46,7 @@ func checkADC() bool {
 func main() {
 	help := flag.Bool("help", false, "show help")
 	test := flag.Bool("test", false, "send a test notification (skips ADC check)")
+	reset := flag.Bool("reset", false, "open notification settings and clear state")
 	flag.Parse()
 
 	if *help {
@@ -55,13 +56,27 @@ func main() {
 		fmt.Println("Clicking the notification opens a WezTerm tab to re-authenticate.")
 		fmt.Println()
 		fmt.Println("Flags:")
-		fmt.Println("  --help  show this help message")
-		fmt.Println("  --test  send a test notification (skips ADC check)")
+		fmt.Println("  --help   show this help message")
+		fmt.Println("  --test   send a test notification (skips ADC check)")
+		fmt.Println("  --reset  open notification settings and clear state")
 		os.Exit(0)
 	}
 
+	if *reset {
+		clearNotified()
+		fmt.Println("Cleared notification state.")
+		fmt.Println("Opening System Settings > Notifications...")
+		fmt.Println("Tip: Set the notification style to \"Alerts\" so notifications stay until clicked.")
+		cmd := exec.Command("open", "x-apple.systempreferences:com.apple.Notifications-Settings")
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to open System Settings: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if *test {
-		sendNotification("Test Notification", "Notifications are working!")
+		sendNotification("Test Notification", "Notifications are working!", true)
 		return
 	}
 
@@ -78,6 +93,7 @@ func main() {
 	sendNotification(
 		"Google Cloud ADC Expired",
 		"Click to re-authenticate with gcloud auth login --update-adc",
+		false,
 	)
 
 	if err := setNotified(); err != nil {

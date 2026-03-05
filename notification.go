@@ -10,10 +10,14 @@ package main
 import "C"
 import "unsafe"
 
-func sendNotification(title, message string) {
+func sendNotification(title, message string, isTest bool) {
 	cTitle := C.CString(title)
 	cMessage := C.CString(message)
 	defer C.free(unsafe.Pointer(cTitle))
 	defer C.free(unsafe.Pointer(cMessage))
-	C.SendNotification(cTitle, cMessage)
+	var cIsTest C.int
+	if isTest {
+		cIsTest = 1
+	}
+	C.SendNotification(cTitle, cMessage, cIsTest)
 }

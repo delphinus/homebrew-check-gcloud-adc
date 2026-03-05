@@ -13,5 +13,7 @@
     <string>APPL</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSUserNotificationAlertStyle</key>
+    <string>alert</string>
 </dict>
 </plist>

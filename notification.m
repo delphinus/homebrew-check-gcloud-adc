@@ -4,8 +4,11 @@
 
 #include "notification.h"
 
-static NSString *const kCategoryIdentifier = @"REAUTH_CATEGORY";
-static NSString *const kActionIdentifier = @"REAUTH_ACTION";
+static NSString *const kReauthCategoryIdentifier = @"REAUTH_CATEGORY";
+static NSString *const kReauthActionIdentifier = @"REAUTH_ACTION";
+static NSString *const kTestCategoryIdentifier = @"TEST_CATEGORY";
+static NSString *const kTestActionIdentifier = @"TEST_ACTION";
+static NSString *const kRepoURL = @"https://github.com/delphinus/homebrew-check-gcloud-adc";
 
 @interface NotificationDelegate : NSObject <UNUserNotificationCenterDelegate>
 @property (nonatomic, assign) BOOL wasClicked;
@@ -23,15 +26,21 @@ static NSString *const kActionIdentifier = @"REAUTH_ACTION";
 - (void)userNotificationCenter:(UNUserNotificationCenter *)center
 didReceiveNotificationResponse:(UNNotificationResponse *)response
          withCompletionHandler:(void (^)(void))completionHandler {
-    if ([response.actionIdentifier isEqualToString:kActionIdentifier] ||
-        [response.actionIdentifier isEqualToString:UNNotificationDefaultActionIdentifier]) {
-        NSTask *task = [[NSTask alloc] init];
-        task.launchPath = @"/bin/bash";
-        task.arguments = @[
-            @"-c",
-            @"wezterm cli spawn -- bash -c 'gcloud auth login --update-adc; echo Done; read'"
-        ];
-        [task launch];
+    NSString *categoryId = response.notification.request.content.categoryIdentifier;
+
+    if ([categoryId isEqualToString:kTestCategoryIdentifier]) {
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:kRepoURL]];
+    } else if ([categoryId isEqualToString:kReauthCategoryIdentifier]) {
+        if ([response.actionIdentifier isEqualToString:kReauthActionIdentifier] ||
+            [response.actionIdentifier isEqualToString:UNNotificationDefaultActionIdentifier]) {
+            NSTask *task = [[NSTask alloc] init];
+            task.launchPath = @"/bin/bash";
+            task.arguments = @[
+                @"-c",
+                @"wezterm cli spawn -- bash -c 'gcloud auth login --update-adc; echo Done; read'"
+            ];
+            [task launch];
+        }
     }
     self.wasClicked = YES;
     completionHandler();
@@ -39,7 +48,7 @@ didReceiveNotificationResponse:(UNNotificationResponse *)response
 
 @end
 
-void SendNotification(const char *title, const char *message) {
+void SendNotification(const char *title, const char *message, int isTest) {
     @autoreleasepool {
         // Initialize NSApplication so the system recognizes us as an app
         [NSApplication sharedApplication];
@@ -50,17 +59,29 @@ void SendNotification(const char *title, const char *message) {
             [UNUserNotificationCenter currentNotificationCenter];
         center.delegate = delegate;
 
-        // Register category with Re-authenticate action
-        UNNotificationAction *action =
-            [UNNotificationAction actionWithIdentifier:kActionIdentifier
+        // Register categories
+        UNNotificationAction *reauthAction =
+            [UNNotificationAction actionWithIdentifier:kReauthActionIdentifier
                                                  title:@"Re-authenticate"
                                                options:UNNotificationActionOptionForeground];
-        UNNotificationCategory *category =
-            [UNNotificationCategory categoryWithIdentifier:kCategoryIdentifier
-                                                   actions:@[action]
+        UNNotificationCategory *reauthCategory =
+            [UNNotificationCategory categoryWithIdentifier:kReauthCategoryIdentifier
+                                                   actions:@[reauthAction]
                                          intentIdentifiers:@[]
                                                    options:0];
-        [center setNotificationCategories:[NSSet setWithObject:category]];
+
+        UNNotificationAction *testAction =
+            [UNNotificationAction actionWithIdentifier:kTestActionIdentifier
+                                                 title:@"Open Repository"
+                                               options:UNNotificationActionOptionForeground];
+        UNNotificationCategory *testCategory =
+            [UNNotificationCategory categoryWithIdentifier:kTestCategoryIdentifier
+                                                   actions:@[testAction]
+                                         intentIdentifiers:@[]
+                                                   options:0];
+
+        [center setNotificationCategories:
+            [NSSet setWithObjects:reauthCategory, testCategory, nil]];
 
         // Request authorization
         dispatch_semaphore_t authSema = dispatch_semaphore_create(0);
@@ -88,7 +109,7 @@ void SendNotification(const char *title, const char *message) {
         content.title = [NSString stringWithUTF8String:title];
         content.body = [NSString stringWithUTF8String:message];
         content.sound = [UNNotificationSound defaultSound];
-        content.categoryIdentifier = kCategoryIdentifier;
+        content.categoryIdentifier = isTest ? kTestCategoryIdentifier : kReauthCategoryIdentifier;
 
         UNNotificationRequest *request =
             [UNNotificationRequest requestWithIdentifier:@"check-gcloud-adc"
