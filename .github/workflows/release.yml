@@ -9,15 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - runner: macos-latest
-            arch: arm64
-          - runner: macos-13
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+  release:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -25,37 +18,24 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build
-        run: make build ARCH=${{ matrix.arch }}
+      - name: Build universal binary
+        run: make build-universal
 
       - name: Test
         run: ./check-gcloud-adc.app/Contents/MacOS/check-gcloud-adc --help
 
+      - name: Verify universal binary
+        run: lipo -info check-gcloud-adc.app/Contents/MacOS/check-gcloud-adc
+
       - name: Archive
-        run: tar czf check-gcloud-adc-${{ matrix.arch }}.tar.gz check-gcloud-adc.app
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: check-gcloud-adc-${{ matrix.arch }}
-          path: check-gcloud-adc-${{ matrix.arch }}.tar.gz
-
-  release:
-    needs: build
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
+        run: tar czf check-gcloud-adc.tar.gz check-gcloud-adc.app
 
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" --generate-notes \
-            artifacts/check-gcloud-adc-arm64/check-gcloud-adc-arm64.tar.gz \
-            artifacts/check-gcloud-adc-x86_64/check-gcloud-adc-x86_64.tar.gz
+            check-gcloud-adc.tar.gz
 
       - name: Update formula
         env:
@@ -63,29 +43,16 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
-          BASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
-
-          ARM64_URL="${BASE_URL}/check-gcloud-adc-arm64.tar.gz"
-          X86_64_URL="${BASE_URL}/check-gcloud-adc-x86_64.tar.gz"
-
-          ARM64_SHA256=$(shasum -a 256 artifacts/check-gcloud-adc-arm64/check-gcloud-adc-arm64.tar.gz | awk '{print $1}')
-          X86_64_SHA256=$(shasum -a 256 artifacts/check-gcloud-adc-x86_64/check-gcloud-adc-x86_64.tar.gz | awk '{print $1}')
+          TARBALL_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/check-gcloud-adc.tar.gz"
+          SHA256=$(shasum -a 256 check-gcloud-adc.tar.gz | awk '{print $1}')
 
           cat > Formula/check-gcloud-adc.rb << FORMULA
           class CheckGcloudAdc < Formula
             desc "Check Google Cloud ADC token validity and notify when expired"
             homepage "https://github.com/${{ github.repository }}"
+            url "${TARBALL_URL}"
+            sha256 "${SHA256}"
             version "${VERSION}"
-
-            on_arm do
-              url "${ARM64_URL}"
-              sha256 "${ARM64_SHA256}"
-            end
-
-            on_intel do
-              url "${X86_64_URL}"
-              sha256 "${X86_64_SHA256}"
-            end
 
             depends_on :macos
 
