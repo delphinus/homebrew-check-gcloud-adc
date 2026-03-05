@@ -28,7 +28,10 @@ jobs:
         run: lipo -info check-gcloud-adc.app/Contents/MacOS/check-gcloud-adc
 
       - name: Archive
-        run: tar czf check-gcloud-adc.tar.gz check-gcloud-adc.app
+        run: |
+          mkdir check-gcloud-adc
+          mv check-gcloud-adc.app check-gcloud-adc/
+          tar czf check-gcloud-adc.tar.gz check-gcloud-adc
 
       - name: Create release
         env:
