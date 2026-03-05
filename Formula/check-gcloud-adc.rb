@@ -1,9 +1,9 @@
 class CheckGcloudAdc < Formula
   desc "Check Google Cloud ADC token validity and notify when expired"
   homepage "https://github.com/delphinus/homebrew-check-gcloud-adc"
-  url "https://github.com/delphinus/homebrew-check-gcloud-adc/archive/refs/tags/v1.0.0.tar.gz"
-  sha256 "4a5542a5a888b2486207887649fb38b43c2ca0d4d958ac9a8326780d26377d75"
-  version "1.0.0"
+  url "https://github.com/delphinus/homebrew-check-gcloud-adc/archive/refs/tags/v1.0.1.tar.gz"
+  sha256 "fa522c5b2eaee26d2f5e04f0090114bba1ad838a7566199709dadfad6766e08a"
+  version "1.0.1"
   head "https://github.com/delphinus/homebrew-check-gcloud-adc.git", branch: "main"
 
   depends_on "go" => :build
@@ -18,8 +18,8 @@ class CheckGcloudAdc < Formula
     app.install "Info.plist"
 
     system "codesign", "--force", "--sign", "-",
-           "--identifier", "com.delphinus.check-gcloud-adc",
-           prefix/"check-gcloud-adc.app"
+ "--identifier", "com.delphinus.check-gcloud-adc",
+ prefix/"check-gcloud-adc.app"
 
     bin.write_exec_script app/"MacOS/check-gcloud-adc"
   end
