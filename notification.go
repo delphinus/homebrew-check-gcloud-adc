@@ -23,3 +23,7 @@ func sendNotification(title, message string, isTest bool) {
 func handlePendingActions() bool {
 	return C.HandlePendingActions() != 0
 }
+
+func waitForNotificationAction(timeoutSeconds float64) bool {
+	return C.WaitForNotificationAction(C.double(timeoutSeconds)) != 0
+}

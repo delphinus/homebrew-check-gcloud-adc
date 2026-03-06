@@ -103,8 +103,14 @@ class ActionHandler: NSObject, UNUserNotificationCenterDelegate {
 // Keep a strong reference to prevent deallocation during event loop
 private var sharedHandler: ActionHandler?
 
-@_cdecl("HandlePendingActions")
-func handlePendingActions() -> Int32 {
+private func runEventLoop(handler: ActionHandler, timeoutSeconds: Double) {
+    let timeout = Date(timeIntervalSinceNow: timeoutSeconds)
+    while !handler.actionHandled && Date() < timeout {
+        RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.1))
+    }
+}
+
+private func setupActionHandler() -> ActionHandler {
     _ = NSApplication.shared
     NSApp.setActivationPolicy(.accessory)
 
@@ -123,14 +129,20 @@ func handlePendingActions() -> Int32 {
         andEventID: AEEventID(kAEGetURL)
     )
 
-    // Process NSApplication events to receive Apple Events (URL scheme) and notification responses
-    let timeout = Date(timeIntervalSinceNow: 1.0)
-    while !handler.actionHandled && Date() < timeout {
-        guard let event = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.1), inMode: .default, dequeue: true) else {
-            continue
-        }
-        NSApp.sendEvent(event)
-    }
+    return handler
+}
+
+@_cdecl("HandlePendingActions")
+func handlePendingActions() -> Int32 {
+    let handler = setupActionHandler()
+    runEventLoop(handler: handler, timeoutSeconds: 1.0)
+    return handler.actionHandled ? 1 : 0
+}
+
+@_cdecl("WaitForNotificationAction")
+func waitForNotificationAction(timeoutSeconds: Double) -> Int32 {
+    let handler = setupActionHandler()
+    runEventLoop(handler: handler, timeoutSeconds: timeoutSeconds)
     return handler.actionHandled ? 1 : 0
 }
 

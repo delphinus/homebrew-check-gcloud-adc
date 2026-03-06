@@ -28,6 +28,12 @@ type app struct {
 
 func (a *app) runTest() {
 	a.notifier.send("Test Notification", "Notifications are working!", true)
+	fmt.Println("Notification sent. Waiting for click... (Ctrl+C to cancel)")
+	if waitForNotificationAction(120) {
+		fmt.Println("Notification action handled.")
+	} else {
+		fmt.Println("Timed out waiting for notification click.")
+	}
 }
 
 func (a *app) runReset() {

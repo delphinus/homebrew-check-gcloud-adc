@@ -3,5 +3,6 @@
 
 void SendNotification(const char *title, const char *message, int isTest);
 int HandlePendingActions(void);
+int WaitForNotificationAction(double timeoutSeconds);
 
 #endif
