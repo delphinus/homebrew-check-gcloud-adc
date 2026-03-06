@@ -2,5 +2,6 @@
 #define NOTIFICATION_H
 
 void SendNotification(const char *title, const char *message, int isTest);
+int HandlePendingActions(void);
 
 #endif

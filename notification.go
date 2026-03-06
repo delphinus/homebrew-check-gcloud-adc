@@ -19,3 +19,7 @@ func sendNotification(title, message string, isTest bool) {
 	}
 	C.SendNotification(cTitle, cMessage, cIsTest)
 }
+
+func handlePendingActions() bool {
+	return C.HandlePendingActions() != 0
+}

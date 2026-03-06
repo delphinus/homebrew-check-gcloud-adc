@@ -56,6 +56,11 @@ func (s *fileStateStore) clearNotified() {
 }
 
 func main() {
+	// Handle pending notification responses or URL scheme events from previous runs
+	if handlePendingActions() {
+		return
+	}
+
 	help := flag.Bool("help", false, "show help")
 	test := flag.Bool("test", false, "send a test notification (skips ADC check)")
 	reset := flag.Bool("reset", false, "open notification settings and clear state")
@@ -66,6 +71,10 @@ func main() {
 		fmt.Println()
 		fmt.Println("If the ADC token is expired or invalid, a macOS notification is sent.")
 		fmt.Println("Clicking the notification opens a WezTerm tab to re-authenticate.")
+		fmt.Println()
+		fmt.Println("You can also trigger actions via URL scheme:")
+		fmt.Println("  open check-gcloud-adc://reauth      re-authenticate")
+		fmt.Println("  open check-gcloud-adc://open-repo    open the repository")
 		fmt.Println()
 		fmt.Println("Flags:")
 		fmt.Println("  --help   show this help message")

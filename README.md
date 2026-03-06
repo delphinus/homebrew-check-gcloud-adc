@@ -42,6 +42,28 @@ brew services stop check-gcloud-adc
 check-gcloud-adc
 ```
 
+### テスト・トラブルシューティング
+
+```bash
+# テスト通知を送信（ADC チェックをスキップ）
+check-gcloud-adc --test
+
+# 通知設定を開いて状態をリセット（通知が出ない場合に）
+check-gcloud-adc --reset
+```
+
+### URL スキーム
+
+通知をクリックする代わりに、URL スキームで直接アクションを実行できます。
+
+```bash
+# WezTerm で再認証
+open check-gcloud-adc://reauth
+
+# リポジトリを開く
+open check-gcloud-adc://open-repo
+```
+
 ### ログ
 
 サービス実行時のログは以下に出力されます。

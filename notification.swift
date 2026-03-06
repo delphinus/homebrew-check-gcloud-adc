@@ -7,59 +7,19 @@ private let kReauthActionIdentifier = "REAUTH_ACTION"
 private let kTestCategoryIdentifier = "TEST_CATEGORY"
 private let kTestActionIdentifier = "TEST_ACTION"
 private let kRepoURL = "https://github.com/delphinus/homebrew-check-gcloud-adc"
+private let kURLScheme = "check-gcloud-adc"
 
-class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
-    var wasClicked = false
-
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler([.banner, .sound])
-    }
-
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        let categoryId = response.notification.request.content.categoryIdentifier
-
-        if categoryId == kTestCategoryIdentifier {
-            if let url = URL(string: kRepoURL) {
-                NSWorkspace.shared.open(url)
-            }
-        } else if categoryId == kReauthCategoryIdentifier {
-            if response.actionIdentifier == kReauthActionIdentifier ||
-               response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                let task = Process()
-                task.launchPath = "/bin/bash"
-                task.arguments = [
-                    "-c",
-                    "wezterm cli spawn -- bash -c 'gcloud auth login --update-adc; echo Done; read'"
-                ]
-                try? task.run()
-            }
-        }
-        wasClicked = true
-        completionHandler()
-    }
+private func openWezTermForReauth() {
+    let task = Process()
+    task.launchPath = "/bin/bash"
+    task.arguments = [
+        "-c",
+        "wezterm cli spawn -- bash -c 'gcloud auth login --update-adc; echo Done; read'"
+    ]
+    try? task.run()
 }
 
-@_cdecl("SendNotification")
-func sendNotification(title: UnsafePointer<CChar>, message: UnsafePointer<CChar>, isTest: Int32) {
-    let titleStr = String(cString: title)
-    let messageStr = String(cString: message)
-
-    _ = NSApplication.shared
-    NSApp.setActivationPolicy(.accessory)
-
-    let delegate = NotificationDelegate()
-    let center = UNUserNotificationCenter.current()
-    center.delegate = delegate
-
-    // Register categories
+private func registerNotificationCategories(_ center: UNUserNotificationCenter) {
     let reauthAction = UNNotificationAction(
         identifier: kReauthActionIdentifier,
         title: "Re-authenticate",
@@ -85,6 +45,103 @@ func sendNotification(title: UnsafePointer<CChar>, message: UnsafePointer<CChar>
     )
 
     center.setNotificationCategories([reauthCategory, testCategory])
+}
+
+class ActionHandler: NSObject, UNUserNotificationCenterDelegate {
+    var actionHandled = false
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let categoryId = response.notification.request.content.categoryIdentifier
+
+        if categoryId == kTestCategoryIdentifier {
+            if let url = URL(string: kRepoURL) {
+                NSWorkspace.shared.open(url)
+            }
+        } else if categoryId == kReauthCategoryIdentifier {
+            if response.actionIdentifier == kReauthActionIdentifier ||
+               response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+                openWezTermForReauth()
+            }
+        }
+        actionHandled = true
+        completionHandler()
+    }
+
+    @objc func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString),
+              url.scheme == kURLScheme else {
+            return
+        }
+
+        switch url.host {
+        case "reauth":
+            openWezTermForReauth()
+        case "open-repo":
+            if let repoURL = URL(string: kRepoURL) {
+                NSWorkspace.shared.open(repoURL)
+            }
+        default:
+            break
+        }
+        actionHandled = true
+    }
+}
+
+// Keep a strong reference to prevent deallocation during event loop
+private var sharedHandler: ActionHandler?
+
+@_cdecl("HandlePendingActions")
+func handlePendingActions() -> Int32 {
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.accessory)
+
+    let handler = ActionHandler()
+    sharedHandler = handler
+
+    let center = UNUserNotificationCenter.current()
+    center.delegate = handler
+    registerNotificationCategories(center)
+
+    // Register URL scheme handler
+    NSAppleEventManager.shared().setEventHandler(
+        handler,
+        andSelector: #selector(ActionHandler.handleGetURL(_:withReplyEvent:)),
+        forEventClass: AEEventClass(kInternetEventClass),
+        andEventID: AEEventID(kAEGetURL)
+    )
+
+    // Run event loop briefly to receive pending notification responses or URL events
+    let timeout = Date(timeIntervalSinceNow: 1.0)
+    while !handler.actionHandled && Date() < timeout {
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    }
+
+    return handler.actionHandled ? 1 : 0
+}
+
+@_cdecl("SendNotification")
+func sendNotification(title: UnsafePointer<CChar>, message: UnsafePointer<CChar>, isTest: Int32) {
+    let titleStr = String(cString: title)
+    let messageStr = String(cString: message)
+
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.accessory)
+
+    let center = UNUserNotificationCenter.current()
+    registerNotificationCategories(center)
 
     // Request authorization
     let authSema = DispatchSemaphore(value: 0)
@@ -124,10 +181,4 @@ func sendNotification(title: UnsafePointer<CChar>, message: UnsafePointer<CChar>
         deliverSema.signal()
     }
     deliverSema.wait()
-
-    // Run the run loop briefly to allow click handling
-    let timeout = Date(timeIntervalSinceNow: 30.0)
-    while !delegate.wasClicked && Date() < timeout {
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
-    }
 }

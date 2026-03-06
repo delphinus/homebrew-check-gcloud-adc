@@ -15,5 +15,16 @@
     <true/>
     <key>NSUserNotificationAlertStyle</key>
     <string>alert</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.delphinus.check-gcloud-adc</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>check-gcloud-adc</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
