@@ -12,6 +12,11 @@ class CheckGcloudAdc < Formula
     bin.write_exec_script prefix/"check-gcloud-adc.app/Contents/MacOS/check-gcloud-adc"
   end
 
+  def post_install
+    system "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+           "-R", prefix/"check-gcloud-adc.app"
+  end
+
   service do
     run opt_prefix/"check-gcloud-adc.app/Contents/MacOS/check-gcloud-adc"
     run_type :interval

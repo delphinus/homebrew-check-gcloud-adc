@@ -123,12 +123,14 @@ func handlePendingActions() -> Int32 {
         andEventID: AEEventID(kAEGetURL)
     )
 
-    // Run event loop briefly to receive pending notification responses or URL events
+    // Process NSApplication events to receive Apple Events (URL scheme) and notification responses
     let timeout = Date(timeIntervalSinceNow: 1.0)
     while !handler.actionHandled && Date() < timeout {
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+        guard let event = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.1), inMode: .default, dequeue: true) else {
+            continue
+        }
+        NSApp.sendEvent(event)
     }
-
     return handler.actionHandled ? 1 : 0
 }
 
