@@ -113,6 +113,7 @@ private func runEventLoop(handler: ActionHandler, timeoutSeconds: Double) {
 private func setupActionHandler() -> ActionHandler {
     _ = NSApplication.shared
     NSApp.setActivationPolicy(.accessory)
+    setAppIcon()
 
     let handler = ActionHandler()
     sharedHandler = handler
@@ -144,6 +145,82 @@ func waitForNotificationAction(timeoutSeconds: Double) -> Int32 {
     let handler = setupActionHandler()
     runEventLoop(handler: handler, timeoutSeconds: timeoutSeconds)
     return handler.actionHandled ? 1 : 0
+}
+
+private func generateIconImage() -> NSImage {
+    let s: CGFloat = 256
+    let image = NSImage(size: NSSize(width: s, height: s))
+    image.lockFocus()
+
+    if let ctx = NSGraphicsContext.current?.cgContext {
+        // Rounded rect with blue gradient background
+        let radius = s * 0.2
+        let bgPath = CGPath(roundedRect: CGRect(x: 0, y: 0, width: s, height: s),
+                            cornerWidth: radius, cornerHeight: radius, transform: nil)
+        ctx.addPath(bgPath)
+        ctx.clip()
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let colors = [
+            CGColor(red: 0.25, green: 0.55, blue: 0.95, alpha: 1.0),
+            CGColor(red: 0.15, green: 0.35, blue: 0.75, alpha: 1.0),
+        ] as CFArray
+        let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: [0.0, 1.0])!
+        ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: s), end: CGPoint(x: 0, y: 0), options: [])
+
+        // Helper to draw tinted SF Symbol
+        func drawTintedSymbol(_ name: String, pointSize: CGFloat, color: NSColor, in rect: NSRect) {
+            guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return }
+            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .bold)
+            guard let configured = symbol.withSymbolConfiguration(config) else { return }
+            let tinted = NSImage(size: configured.size)
+            tinted.lockFocus()
+            color.set()
+            let tintRect = NSRect(origin: .zero, size: configured.size)
+            configured.draw(in: tintRect)
+            tintRect.fill(using: .sourceAtop)
+            tinted.unlockFocus()
+            tinted.draw(in: rect)
+        }
+
+        // Cloud
+        if let cloudSymbol = NSImage(systemSymbolName: "cloud.fill", accessibilityDescription: nil) {
+            let config = NSImage.SymbolConfiguration(pointSize: s * 0.45, weight: .bold)
+            if let configured = cloudSymbol.withSymbolConfiguration(config) {
+                let sz = configured.size
+                let x = (s - sz.width) / 2
+                let y = (s - sz.height) / 2 + s * 0.08
+                drawTintedSymbol("cloud.fill", pointSize: s * 0.45,
+                                 color: NSColor.white.withAlphaComponent(0.95),
+                                 in: NSRect(x: x, y: y, width: sz.width, height: sz.height))
+            }
+        }
+
+        // Key
+        if let keySymbol = NSImage(systemSymbolName: "key.fill", accessibilityDescription: nil) {
+            let config = NSImage.SymbolConfiguration(pointSize: s * 0.22, weight: .bold)
+            if let configured = keySymbol.withSymbolConfiguration(config) {
+                let sz = configured.size
+                let x = (s - sz.width) / 2 + s * 0.12
+                let y = (s - sz.height) / 2 - s * 0.12
+                let circleSize = max(sz.width, sz.height) * 1.4
+                let cx = x + (sz.width - circleSize) / 2
+                let cy = y + (sz.height - circleSize) / 2
+                NSColor(red: 0.1, green: 0.25, blue: 0.6, alpha: 0.7).setFill()
+                NSBezierPath(ovalIn: NSRect(x: cx, y: cy, width: circleSize, height: circleSize)).fill()
+                drawTintedSymbol("key.fill", pointSize: s * 0.22,
+                                 color: NSColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1.0),
+                                 in: NSRect(x: x, y: y, width: sz.width, height: sz.height))
+            }
+        }
+    }
+
+    image.unlockFocus()
+    return image
+}
+
+private func setAppIcon() {
+    NSApp.applicationIconImage = generateIconImage()
 }
 
 @_cdecl("SendNotification")

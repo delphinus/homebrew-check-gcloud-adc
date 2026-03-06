@@ -2,6 +2,7 @@ BINARY_NAME := check-gcloud-adc
 APP_BUNDLE := $(BINARY_NAME).app
 APP_CONTENTS := $(APP_BUNDLE)/Contents
 APP_MACOS := $(APP_CONTENTS)/MacOS
+APP_RESOURCES := $(APP_CONTENTS)/Resources
 
 .PHONY: build build-universal clean
 
@@ -10,9 +11,12 @@ build:
 		-module-name Notification \
 		-o libnotification.a notification.swift
 	CGO_ENABLED=1 go build -o $(BINARY_NAME) .
-	mkdir -p $(APP_MACOS)
+	swift generate_icon.swift
+	iconutil -c icns AppIcon.iconset -o AppIcon.icns
+	mkdir -p $(APP_MACOS) $(APP_RESOURCES)
 	cp $(BINARY_NAME) $(APP_MACOS)/
 	cp Info.plist $(APP_CONTENTS)/
+	cp AppIcon.icns $(APP_RESOURCES)/
 	codesign --force --sign - --identifier com.delphinus.check-gcloud-adc $(APP_BUNDLE)
 
 build-universal:
@@ -31,11 +35,15 @@ build-universal:
 		go build -o $(BINARY_NAME)-x86_64 .
 	# Combine with lipo
 	lipo -create -output $(BINARY_NAME) $(BINARY_NAME)-arm64 $(BINARY_NAME)-x86_64
-	mkdir -p $(APP_MACOS)
+	swift generate_icon.swift
+	iconutil -c icns AppIcon.iconset -o AppIcon.icns
+	mkdir -p $(APP_MACOS) $(APP_RESOURCES)
 	cp $(BINARY_NAME) $(APP_MACOS)/
 	cp Info.plist $(APP_CONTENTS)/
+	cp AppIcon.icns $(APP_RESOURCES)/
 	codesign --force --sign - --identifier com.delphinus.check-gcloud-adc $(APP_BUNDLE)
 
 clean:
 	rm -rf $(BINARY_NAME) $(BINARY_NAME)-arm64 $(BINARY_NAME)-x86_64 \
-		$(APP_BUNDLE) libnotification.a Notification.swiftmodule
+		$(APP_BUNDLE) libnotification.a Notification.swiftmodule \
+		AppIcon.iconset AppIcon.icns

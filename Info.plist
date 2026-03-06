@@ -9,6 +9,8 @@
     <string>check-gcloud-adc</string>
     <key>CFBundleExecutable</key>
     <string>check-gcloud-adc</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSUIElement</key>
