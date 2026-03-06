@@ -1,9 +1,9 @@
 class CheckGcloudAdc < Formula
   desc "Check Google Cloud ADC token validity and notify when expired"
   homepage "https://github.com/delphinus/homebrew-check-gcloud-adc"
-  url "https://github.com/delphinus/homebrew-check-gcloud-adc/releases/download/v1.3.0/check-gcloud-adc.tar.gz"
-  sha256 "902931121ab86ab1774960cbe55e5bd73e6caaa2df079d6a0718fc140be6efcd"
-  version "1.3.0"
+  url "https://github.com/delphinus/homebrew-check-gcloud-adc/releases/download/v1.3.1/check-gcloud-adc.tar.gz"
+  sha256 "6673d5c91e713ffa4bf5773b91125e6def10abd2000a52268ac64ad4311a77ff"
+  version "1.3.1"
 
   depends_on :macos
 
@@ -14,7 +14,7 @@ class CheckGcloudAdc < Formula
 
   def post_install
     system "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
-           "-R", prefix/"check-gcloud-adc.app"
+ "-R", prefix/"check-gcloud-adc.app"
   end
 
   service do
