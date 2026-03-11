@@ -14,22 +14,32 @@ type adcChecker interface {
 	check() bool
 }
 
+type deliveryChecker interface {
+	isDelivered() bool
+}
+
 type stateStore interface {
 	isNotified() bool
 	setNotified() error
 	clearNotified()
 }
 
+type actionWaiter interface {
+	waitForAction(timeoutSeconds float64) bool
+}
+
 type app struct {
-	notifier   notifier
-	adcChecker adcChecker
-	state      stateStore
+	notifier        notifier
+	adcChecker      adcChecker
+	deliveryChecker deliveryChecker
+	actionWaiter    actionWaiter
+	state           stateStore
 }
 
 func (a *app) runTest() {
 	a.notifier.send("Test Notification", "Notifications are working!", true)
 	fmt.Println("Notification sent. Waiting for click... (Ctrl+C to cancel)")
-	if waitForNotificationAction(120) {
+	if a.actionWaiter.waitForAction(120) {
 		fmt.Println("Notification action handled.")
 	} else {
 		fmt.Println("Timed out waiting for notification click.")
@@ -54,7 +64,7 @@ func (a *app) runCheck() {
 		return
 	}
 
-	if a.state.isNotified() {
+	if a.state.isNotified() && a.deliveryChecker.isDelivered() {
 		return
 	}
 
@@ -70,5 +80,5 @@ func (a *app) runCheck() {
 
 	// Keep the process alive to handle the notification action when clicked.
 	// The service interval is 300s, so wait up to 270s.
-	waitForNotificationAction(270)
+	a.actionWaiter.waitForAction(270)
 }

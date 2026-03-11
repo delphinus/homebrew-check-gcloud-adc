@@ -223,6 +223,19 @@ private func setAppIcon() {
     NSApp.applicationIconImage = generateIconImage()
 }
 
+@_cdecl("IsNotificationDelivered")
+func isNotificationDelivered() -> Int32 {
+    let center = UNUserNotificationCenter.current()
+    let sema = DispatchSemaphore(value: 0)
+    var found = false
+    center.getDeliveredNotifications { notifications in
+        found = notifications.contains { $0.request.identifier == "check-gcloud-adc" }
+        sema.signal()
+    }
+    sema.wait()
+    return found ? 1 : 0
+}
+
 @_cdecl("SendNotification")
 func sendNotification(title: UnsafePointer<CChar>, message: UnsafePointer<CChar>, isTest: Int32) {
     let titleStr = String(cString: title)

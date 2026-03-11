@@ -14,6 +14,18 @@ func (n *macNotifier) send(title, message string, isTest bool) {
 	sendNotification(title, message, isTest)
 }
 
+type macDeliveryChecker struct{}
+
+func (d *macDeliveryChecker) isDelivered() bool {
+	return isNotificationDelivered()
+}
+
+type macActionWaiter struct{}
+
+func (w *macActionWaiter) waitForAction(timeoutSeconds float64) bool {
+	return waitForNotificationAction(timeoutSeconds)
+}
+
 type gcloudADCChecker struct{}
 
 func (c *gcloudADCChecker) check() bool {
@@ -84,9 +96,11 @@ func main() {
 	}
 
 	a := &app{
-		notifier:   &macNotifier{},
-		adcChecker: &gcloudADCChecker{},
-		state:      newFileStateStore(),
+		notifier:        &macNotifier{},
+		adcChecker:      &gcloudADCChecker{},
+		deliveryChecker: &macDeliveryChecker{},
+		actionWaiter:    &macActionWaiter{},
+		state:           newFileStateStore(),
 	}
 
 	if *reset {
