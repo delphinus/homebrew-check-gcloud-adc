@@ -67,4 +67,8 @@ func (a *app) runCheck() {
 	if err := a.state.setNotified(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to set notified flag: %v\n", err)
 	}
+
+	// Keep the process alive to handle the notification action when clicked.
+	// The service interval is 300s, so wait up to 270s.
+	waitForNotificationAction(270)
 }
