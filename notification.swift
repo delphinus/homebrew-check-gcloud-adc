@@ -9,11 +9,14 @@ private let kTestActionIdentifier = "TEST_ACTION"
 private let kRepoURL = "https://github.com/delphinus/homebrew-check-gcloud-adc"
 private let kURLScheme = "check-gcloud-adc"
 
+private var reauthProcess: Process?
+
 private func runReauth() {
     let task = Process()
     task.launchPath = "/bin/zsh"
     task.arguments = ["-l", "-c", "gcloud auth login --update-adc"]
     try? task.run()
+    reauthProcess = task
 }
 
 private func registerNotificationCategories(_ center: UNUserNotificationCenter) {
@@ -44,8 +47,25 @@ private func registerNotificationCategories(_ center: UNUserNotificationCenter) 
     center.setNotificationCategories([reauthCategory, testCategory])
 }
 
-class ActionHandler: NSObject, UNUserNotificationCenterDelegate {
+class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDelegate {
     var actionHandled = false
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard url.scheme == kURLScheme else { continue }
+            switch url.host {
+            case "reauth":
+                runReauth()
+            case "open-repo":
+                if let repoURL = URL(string: kRepoURL) {
+                    NSWorkspace.shared.open(repoURL)
+                }
+            default:
+                break
+            }
+            actionHandled = true
+        }
+    }
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -82,7 +102,6 @@ class ActionHandler: NSObject, UNUserNotificationCenterDelegate {
               url.scheme == kURLScheme else {
             return
         }
-
         switch url.host {
         case "reauth":
             runReauth()
@@ -103,7 +122,9 @@ private var sharedHandler: ActionHandler?
 private func runEventLoop(handler: ActionHandler, timeoutSeconds: Double) {
     let timeout = Date(timeIntervalSinceNow: timeoutSeconds)
     while !handler.actionHandled && Date() < timeout {
-        RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.1))
+        if let event = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.1), inMode: .default, dequeue: true) {
+            NSApp.sendEvent(event)
+        }
     }
 }
 
@@ -115,11 +136,10 @@ private func setupActionHandler() -> ActionHandler {
     let handler = ActionHandler()
     sharedHandler = handler
 
-    let center = UNUserNotificationCenter.current()
-    center.delegate = handler
-    registerNotificationCategories(center)
+    // Set as app delegate to receive application:open:urls:
+    NSApp.delegate = handler
 
-    // Register URL scheme handler
+    // Register URL scheme handler before finishLaunching so queued events are caught
     NSAppleEventManager.shared().setEventHandler(
         handler,
         andSelector: #selector(ActionHandler.handleGetURL(_:withReplyEvent:)),
@@ -127,13 +147,23 @@ private func setupActionHandler() -> ActionHandler {
         andEventID: AEEventID(kAEGetURL)
     )
 
+    // finishLaunching delivers any queued Apple Events (e.g. URL scheme)
+    NSApp.finishLaunching()
+
+    let center = UNUserNotificationCenter.current()
+    center.delegate = handler
+    registerNotificationCategories(center)
+
     return handler
 }
 
 @_cdecl("HandlePendingActions")
 func handlePendingActions() -> Int32 {
     let handler = setupActionHandler()
-    runEventLoop(handler: handler, timeoutSeconds: 1.0)
+    runEventLoop(handler: handler, timeoutSeconds: 5.0)
+    if let proc = reauthProcess, proc.isRunning {
+        proc.waitUntilExit()
+    }
     return handler.actionHandled ? 1 : 0
 }
 
@@ -141,6 +171,9 @@ func handlePendingActions() -> Int32 {
 func waitForNotificationAction(timeoutSeconds: Double) -> Int32 {
     let handler = setupActionHandler()
     runEventLoop(handler: handler, timeoutSeconds: timeoutSeconds)
+    if let proc = reauthProcess, proc.isRunning {
+        proc.waitUntilExit()
+    }
     return handler.actionHandled ? 1 : 0
 }
 
