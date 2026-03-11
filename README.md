@@ -1,12 +1,12 @@
 # check-gcloud-adc
 
-Google Cloud の Application Default Credentials (ADC) トークンの有効性を定期的にチェックし、期限切れの場合に macOS 通知を送信するツールです。通知をクリックすると WezTerm で再認証用のタブが開きます。
+Google Cloud の Application Default Credentials (ADC) トークンの有効性を定期的にチェックし、期限切れの場合に macOS 通知を送信するツールです。通知をクリックすると `gcloud auth login --update-adc` が実行され、ブラウザで再認証できます。
 
 ## 仕組み
 
 - `gcloud auth application-default print-access-token` を実行してトークンの有効性を確認
 - トークンが無効な場合、macOS のネイティブ通知を送信（1 回のみ、再認証まで重複しない）
-- 通知クリックで `gcloud auth login --update-adc` を WezTerm 内で実行
+- 通知クリックで `gcloud auth login --update-adc` を実行（ブラウザが開いて認証）
 - `brew services` により 5 分間隔で自動実行
 
 ## インストール
@@ -19,7 +19,7 @@ brew install delphinus/check-gcloud-adc/check-gcloud-adc
 
 - macOS
 - [Google Cloud SDK](https://cloud.google.com/sdk) (`gcloud` コマンド)
-- [WezTerm](https://wezfurlong.org/wezterm/)（通知クリック時の再認証に使用）
+
 
 ## 使い方
 
@@ -57,7 +57,7 @@ check-gcloud-adc --reset
 通知をクリックする代わりに、URL スキームで直接アクションを実行できます。
 
 ```bash
-# WezTerm で再認証
+# 再認証（ブラウザが開きます）
 open check-gcloud-adc://reauth
 
 # リポジトリを開く

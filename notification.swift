@@ -9,13 +9,10 @@ private let kTestActionIdentifier = "TEST_ACTION"
 private let kRepoURL = "https://github.com/delphinus/homebrew-check-gcloud-adc"
 private let kURLScheme = "check-gcloud-adc"
 
-private func openWezTermForReauth() {
+private func runReauth() {
     let task = Process()
-    task.launchPath = "/bin/bash"
-    task.arguments = [
-        "-c",
-        "wezterm cli spawn -- bash -c 'gcloud auth login --update-adc; echo Done; read'"
-    ]
+    task.launchPath = "/bin/zsh"
+    task.arguments = ["-l", "-c", "gcloud auth login --update-adc"]
     try? task.run()
 }
 
@@ -72,7 +69,7 @@ class ActionHandler: NSObject, UNUserNotificationCenterDelegate {
         } else if categoryId == kReauthCategoryIdentifier {
             if response.actionIdentifier == kReauthActionIdentifier ||
                response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                openWezTermForReauth()
+                runReauth()
             }
         }
         actionHandled = true
@@ -88,7 +85,7 @@ class ActionHandler: NSObject, UNUserNotificationCenterDelegate {
 
         switch url.host {
         case "reauth":
-            openWezTermForReauth()
+            runReauth()
         case "open-repo":
             if let repoURL = URL(string: kRepoURL) {
                 NSWorkspace.shared.open(repoURL)

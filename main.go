@@ -82,7 +82,7 @@ func main() {
 		fmt.Println("check-gcloud-adc: Check Google Cloud ADC token validity")
 		fmt.Println()
 		fmt.Println("If the ADC token is expired or invalid, a macOS notification is sent.")
-		fmt.Println("Clicking the notification opens a WezTerm tab to re-authenticate.")
+		fmt.Println("Clicking the notification runs gcloud auth login --update-adc to re-authenticate.")
 		fmt.Println()
 		fmt.Println("You can also trigger actions via URL scheme:")
 		fmt.Println("  open check-gcloud-adc://reauth      re-authenticate")
