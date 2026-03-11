@@ -23,7 +23,7 @@ private func registerNotificationCategories(_ center: UNUserNotificationCenter) 
     let reauthAction = UNNotificationAction(
         identifier: kReauthActionIdentifier,
         title: "Re-authenticate",
-        options: []
+        options: [.foreground]
     )
     let reauthCategory = UNNotificationCategory(
         identifier: kReauthCategoryIdentifier,
