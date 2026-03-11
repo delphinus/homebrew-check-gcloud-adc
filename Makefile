@@ -4,46 +4,31 @@ APP_CONTENTS := $(APP_BUNDLE)/Contents
 APP_MACOS := $(APP_CONTENTS)/MacOS
 APP_RESOURCES := $(APP_CONTENTS)/Resources
 
-.PHONY: build build-universal clean
+.PHONY: build build-universal test clean
 
 build:
-	swiftc -emit-library -static -emit-module \
-		-module-name Notification \
-		-o libnotification.a notification.swift
-	CGO_ENABLED=1 go build -o $(BINARY_NAME) .
+	swift build -c release
 	swift generate_icon.swift
 	iconutil -c icns AppIcon.iconset -o AppIcon.icns
 	mkdir -p $(APP_MACOS) $(APP_RESOURCES)
-	cp $(BINARY_NAME) $(APP_MACOS)/
+	cp $$(swift build -c release --show-bin-path)/$(BINARY_NAME) $(APP_MACOS)/
 	cp Info.plist $(APP_CONTENTS)/
 	cp AppIcon.icns $(APP_RESOURCES)/
 	codesign --force --sign - --identifier com.delphinus.check-gcloud-adc $(APP_BUNDLE)
 
 build-universal:
-	# Build arm64
-	swiftc -emit-library -static -emit-module \
-		-module-name Notification \
-		-target arm64-apple-macosx13.0 \
-		-o libnotification.a notification.swift
-	CGO_ENABLED=1 GOARCH=arm64 go build -o $(BINARY_NAME)-arm64 .
-	# Build x86_64
-	swiftc -emit-library -static -emit-module \
-		-module-name Notification \
-		-target x86_64-apple-macosx13.0 \
-		-o libnotification.a notification.swift
-	CGO_ENABLED=1 GOARCH=amd64 CC="clang -arch x86_64" \
-		go build -o $(BINARY_NAME)-x86_64 .
-	# Combine with lipo
-	lipo -create -output $(BINARY_NAME) $(BINARY_NAME)-arm64 $(BINARY_NAME)-x86_64
+	swift build -c release --arch arm64 --arch x86_64
 	swift generate_icon.swift
 	iconutil -c icns AppIcon.iconset -o AppIcon.icns
 	mkdir -p $(APP_MACOS) $(APP_RESOURCES)
-	cp $(BINARY_NAME) $(APP_MACOS)/
+	cp $$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/$(BINARY_NAME) $(APP_MACOS)/
 	cp Info.plist $(APP_CONTENTS)/
 	cp AppIcon.icns $(APP_RESOURCES)/
 	codesign --force --sign - --identifier com.delphinus.check-gcloud-adc $(APP_BUNDLE)
 
+test:
+	swift run check-gcloud-adc-tests
+
 clean:
-	rm -rf $(BINARY_NAME) $(BINARY_NAME)-arm64 $(BINARY_NAME)-x86_64 \
-		$(APP_BUNDLE) libnotification.a Notification.swiftmodule \
-		AppIcon.iconset AppIcon.icns
+	swift package clean
+	rm -rf $(APP_BUNDLE) AppIcon.iconset AppIcon.icns

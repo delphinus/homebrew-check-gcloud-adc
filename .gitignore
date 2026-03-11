@@ -1,10 +1,7 @@
-check-gcloud-adc
-check-gcloud-adc.app/
-libnotification.a
-Notification.abi.json
-Notification.swiftdoc
-Notification.swiftmodule
-Notification.swiftsourceinfo
+/check-gcloud-adc
+/check-gcloud-adc.app/
+.build/
+.swiftpm/
 AppIcon.iconset/
 AppIcon.icns
 .claude/

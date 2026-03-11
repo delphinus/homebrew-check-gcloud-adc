@@ -14,15 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
       - name: Build universal binary
         run: make build-universal
 
       - name: Test
-        run: ./check-gcloud-adc.app/Contents/MacOS/check-gcloud-adc --help
+        run: make test
 
       - name: Verify universal binary
         run: lipo -info check-gcloud-adc.app/Contents/MacOS/check-gcloud-adc

@@ -9,53 +9,24 @@ private let kTestActionIdentifier = "TEST_ACTION"
 private let kRepoURL = "https://github.com/delphinus/homebrew-check-gcloud-adc"
 private let kURLScheme = "check-gcloud-adc"
 
-private var reauthProcess: Process?
-
-private func runReauth() {
+private func runReauth() -> Process? {
     let task = Process()
     task.launchPath = "/bin/zsh"
     task.arguments = ["-l", "-c", "gcloud auth login --update-adc"]
     try? task.run()
-    reauthProcess = task
-}
-
-private func registerNotificationCategories(_ center: UNUserNotificationCenter) {
-    let reauthAction = UNNotificationAction(
-        identifier: kReauthActionIdentifier,
-        title: "Re-authenticate",
-        options: []
-    )
-    let reauthCategory = UNNotificationCategory(
-        identifier: kReauthCategoryIdentifier,
-        actions: [reauthAction],
-        intentIdentifiers: [],
-        options: []
-    )
-
-    let testAction = UNNotificationAction(
-        identifier: kTestActionIdentifier,
-        title: "Open Repository",
-        options: []
-    )
-    let testCategory = UNNotificationCategory(
-        identifier: kTestCategoryIdentifier,
-        actions: [testAction],
-        intentIdentifiers: [],
-        options: []
-    )
-
-    center.setNotificationCategories([reauthCategory, testCategory])
+    return task
 }
 
 class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDelegate {
     var actionHandled = false
+    var reauthProcess: Process?
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             guard url.scheme == kURLScheme else { continue }
             switch url.host {
             case "reauth":
-                runReauth()
+                reauthProcess = runReauth()
             case "open-repo":
                 if let repoURL = URL(string: kRepoURL) {
                     NSWorkspace.shared.open(repoURL)
@@ -89,7 +60,7 @@ class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDe
         } else if categoryId == kReauthCategoryIdentifier {
             if response.actionIdentifier == kReauthActionIdentifier ||
                response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                runReauth()
+                reauthProcess = runReauth()
             }
         }
         actionHandled = true
@@ -104,7 +75,7 @@ class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDe
         }
         switch url.host {
         case "reauth":
-            runReauth()
+            reauthProcess = runReauth()
         case "open-repo":
             if let repoURL = URL(string: kRepoURL) {
                 NSWorkspace.shared.open(repoURL)
@@ -116,65 +87,153 @@ class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDe
     }
 }
 
-// Keep a strong reference to prevent deallocation during event loop
-private var sharedHandler: ActionHandler?
+public class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
+    private var handler: ActionHandler?
+    private let center = UNUserNotificationCenter.current()
 
-private func runEventLoop(handler: ActionHandler, timeoutSeconds: Double) {
-    let timeout = Date(timeIntervalSinceNow: timeoutSeconds)
-    while !handler.actionHandled && Date() < timeout {
-        if let event = NSApp.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.1), inMode: .default, dequeue: true) {
-            NSApp.sendEvent(event)
+    public init() {}
+
+    private func ensureSetup() -> ActionHandler {
+        if let handler = self.handler { return handler }
+
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.accessory)
+        NSApp.applicationIconImage = generateIconImage()
+
+        let handler = ActionHandler()
+        self.handler = handler
+
+        NSApp.delegate = handler
+
+        NSAppleEventManager.shared().setEventHandler(
+            handler,
+            andSelector: #selector(ActionHandler.handleGetURL(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+
+        NSApp.finishLaunching()
+
+        center.delegate = handler
+        registerNotificationCategories()
+
+        return handler
+    }
+
+    private func registerNotificationCategories() {
+        let reauthAction = UNNotificationAction(
+            identifier: kReauthActionIdentifier,
+            title: "Re-authenticate",
+            options: []
+        )
+        let reauthCategory = UNNotificationCategory(
+            identifier: kReauthCategoryIdentifier,
+            actions: [reauthAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        let testAction = UNNotificationAction(
+            identifier: kTestActionIdentifier,
+            title: "Open Repository",
+            options: []
+        )
+        let testCategory = UNNotificationCategory(
+            identifier: kTestCategoryIdentifier,
+            actions: [testAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        center.setNotificationCategories([reauthCategory, testCategory])
+    }
+
+    private func runEventLoop(handler: ActionHandler, timeoutSeconds: Double) {
+        let timeout = Date(timeIntervalSinceNow: timeoutSeconds)
+        while !handler.actionHandled && Date() < timeout {
+            if let event = NSApp.nextEvent(
+                matching: .any,
+                until: Date(timeIntervalSinceNow: 0.1),
+                inMode: .default,
+                dequeue: true
+            ) {
+                NSApp.sendEvent(event)
+            }
         }
     }
-}
 
-private func setupActionHandler() -> ActionHandler {
-    _ = NSApplication.shared
-    NSApp.setActivationPolicy(.accessory)
-    setAppIcon()
-
-    let handler = ActionHandler()
-    sharedHandler = handler
-
-    // Set as app delegate to receive application:open:urls:
-    NSApp.delegate = handler
-
-    // Register URL scheme handler before finishLaunching so queued events are caught
-    NSAppleEventManager.shared().setEventHandler(
-        handler,
-        andSelector: #selector(ActionHandler.handleGetURL(_:withReplyEvent:)),
-        forEventClass: AEEventClass(kInternetEventClass),
-        andEventID: AEEventID(kAEGetURL)
-    )
-
-    // finishLaunching delivers any queued Apple Events (e.g. URL scheme)
-    NSApp.finishLaunching()
-
-    let center = UNUserNotificationCenter.current()
-    center.delegate = handler
-    registerNotificationCategories(center)
-
-    return handler
-}
-
-@_cdecl("HandlePendingActions")
-func handlePendingActions() -> Int32 {
-    let handler = setupActionHandler()
-    runEventLoop(handler: handler, timeoutSeconds: 5.0)
-    if let proc = reauthProcess, proc.isRunning {
-        proc.waitUntilExit()
+    private func waitForReauth(handler: ActionHandler) {
+        if let proc = handler.reauthProcess, proc.isRunning {
+            proc.waitUntilExit()
+        }
     }
-    return handler.actionHandled ? 1 : 0
-}
 
-@_cdecl("WaitForNotificationAction")
-func waitForNotificationAction(timeoutSeconds: Double) -> Int32 {
-    let handler = setupActionHandler()
-    runEventLoop(handler: handler, timeoutSeconds: timeoutSeconds)
-    if let proc = reauthProcess, proc.isRunning {
-        proc.waitUntilExit()
+    public func handlePendingActions() -> Bool {
+        let handler = ensureSetup()
+        runEventLoop(handler: handler, timeoutSeconds: 5.0)
+        waitForReauth(handler: handler)
+        return handler.actionHandled
     }
-    return handler.actionHandled ? 1 : 0
+
+    public func send(title: String, message: String, isTest: Bool) {
+        _ = ensureSetup()
+
+        let sema = DispatchSemaphore(value: 0)
+        var authorized = false
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            authorized = granted
+            if let error = error {
+                fputs("notification authorization error: \(error.localizedDescription)\n", stderr)
+            }
+            sema.signal()
+        }
+        sema.wait()
+
+        guard authorized else {
+            fputs("notifications not authorized; enable in System Settings > Notifications\n", stderr)
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = message
+        content.sound = .default
+        content.categoryIdentifier = isTest ? kTestCategoryIdentifier : kReauthCategoryIdentifier
+
+        let request = UNNotificationRequest(
+            identifier: "check-gcloud-adc",
+            content: content,
+            trigger: nil
+        )
+
+        let deliverSema = DispatchSemaphore(value: 0)
+        center.add(request) { error in
+            if let error = error {
+                fputs("notification delivery error: \(error.localizedDescription)\n", stderr)
+            }
+            deliverSema.signal()
+        }
+        deliverSema.wait()
+    }
+
+    public func isDelivered() -> Bool {
+        let sema = DispatchSemaphore(value: 0)
+        var found = false
+        center.getDeliveredNotifications { notifications in
+            found = notifications.contains { $0.request.identifier == "check-gcloud-adc" }
+            sema.signal()
+        }
+        sema.wait()
+        return found
+    }
+
+    @discardableResult
+    public func waitForAction(timeoutSeconds: Double) -> Bool {
+        let handler = ensureSetup()
+        runEventLoop(handler: handler, timeoutSeconds: timeoutSeconds)
+        waitForReauth(handler: handler)
+        return handler.actionHandled
+    }
 }
 
 private func generateIconImage() -> NSImage {
@@ -183,7 +242,6 @@ private func generateIconImage() -> NSImage {
     image.lockFocus()
 
     if let ctx = NSGraphicsContext.current?.cgContext {
-        // Rounded rect with blue gradient background
         let radius = s * 0.2
         let bgPath = CGPath(roundedRect: CGRect(x: 0, y: 0, width: s, height: s),
                             cornerWidth: radius, cornerHeight: radius, transform: nil)
@@ -198,7 +256,6 @@ private func generateIconImage() -> NSImage {
         let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: [0.0, 1.0])!
         ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: s), end: CGPoint(x: 0, y: 0), options: [])
 
-        // Helper to draw tinted SF Symbol
         func drawTintedSymbol(_ name: String, pointSize: CGFloat, color: NSColor, in rect: NSRect) {
             guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return }
             let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .bold)
@@ -213,7 +270,6 @@ private func generateIconImage() -> NSImage {
             tinted.draw(in: rect)
         }
 
-        // Cloud
         if let cloudSymbol = NSImage(systemSymbolName: "cloud.fill", accessibilityDescription: nil) {
             let config = NSImage.SymbolConfiguration(pointSize: s * 0.45, weight: .bold)
             if let configured = cloudSymbol.withSymbolConfiguration(config) {
@@ -226,7 +282,6 @@ private func generateIconImage() -> NSImage {
             }
         }
 
-        // Key
         if let keySymbol = NSImage(systemSymbolName: "key.fill", accessibilityDescription: nil) {
             let config = NSImage.SymbolConfiguration(pointSize: s * 0.22, weight: .bold)
             if let configured = keySymbol.withSymbolConfiguration(config) {
@@ -247,72 +302,4 @@ private func generateIconImage() -> NSImage {
 
     image.unlockFocus()
     return image
-}
-
-private func setAppIcon() {
-    NSApp.applicationIconImage = generateIconImage()
-}
-
-@_cdecl("IsNotificationDelivered")
-func isNotificationDelivered() -> Int32 {
-    let center = UNUserNotificationCenter.current()
-    let sema = DispatchSemaphore(value: 0)
-    var found = false
-    center.getDeliveredNotifications { notifications in
-        found = notifications.contains { $0.request.identifier == "check-gcloud-adc" }
-        sema.signal()
-    }
-    sema.wait()
-    return found ? 1 : 0
-}
-
-@_cdecl("SendNotification")
-func sendNotification(title: UnsafePointer<CChar>, message: UnsafePointer<CChar>, isTest: Int32) {
-    let titleStr = String(cString: title)
-    let messageStr = String(cString: message)
-
-    _ = NSApplication.shared
-    NSApp.setActivationPolicy(.accessory)
-
-    let center = UNUserNotificationCenter.current()
-    registerNotificationCategories(center)
-
-    // Request authorization
-    let authSema = DispatchSemaphore(value: 0)
-    var authorized = false
-    center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-        authorized = granted
-        if let error = error {
-            fputs("notification authorization error: \(error.localizedDescription)\n", stderr)
-        }
-        authSema.signal()
-    }
-    authSema.wait()
-
-    if !authorized {
-        fputs("notifications not authorized; enable in System Settings > Notifications\n", stderr)
-        return
-    }
-
-    // Build and deliver notification
-    let content = UNMutableNotificationContent()
-    content.title = titleStr
-    content.body = messageStr
-    content.sound = .default
-    content.categoryIdentifier = isTest != 0 ? kTestCategoryIdentifier : kReauthCategoryIdentifier
-
-    let request = UNNotificationRequest(
-        identifier: "check-gcloud-adc",
-        content: content,
-        trigger: nil
-    )
-
-    let deliverSema = DispatchSemaphore(value: 0)
-    center.add(request) { error in
-        if let error = error {
-            fputs("notification delivery error: \(error.localizedDescription)\n", stderr)
-        }
-        deliverSema.signal()
-    }
-    deliverSema.wait()
 }
