@@ -34,7 +34,7 @@ let app = App(
 )
 
 if args.contains("--reset") {
-    app.runReset()
+    app.reset()
 } else if args.contains("--test") {
     app.runTest()
 } else {

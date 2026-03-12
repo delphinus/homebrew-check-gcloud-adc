@@ -64,7 +64,7 @@ public class App {
         }
     }
 
-    public func runReset() {
+    public func reset() {
         print("Opening System Settings > Notifications...")
         print("Tip: Set the notification style to \"Alerts\" so notifications stay until clicked.")
         let task = Process()
