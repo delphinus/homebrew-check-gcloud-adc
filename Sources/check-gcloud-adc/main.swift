@@ -3,7 +3,7 @@ import Foundation
 
 let notificationSystem = NotificationSystem()
 
-if notificationSystem.handlePendingActions() {
+guard !notificationSystem.handlePendingActions() else {
     exit(0)
 }
 
