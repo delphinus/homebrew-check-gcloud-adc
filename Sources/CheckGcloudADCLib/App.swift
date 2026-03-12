@@ -54,7 +54,7 @@ public class App {
         self.actionWaiter = actionWaiter
     }
 
-    public func runTest() {
+    public func test() {
         notifier.send(title: "Test Notification", message: "Notifications are working!", isTest: true)
         print("Notification sent. Waiting for click... (Ctrl+C to cancel)")
         if actionWaiter.waitForAction(timeoutSeconds: 120) {

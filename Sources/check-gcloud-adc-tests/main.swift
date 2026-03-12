@@ -92,7 +92,7 @@ test("runCheck: ADC invalid, already delivered -> no notification") {
 test("runTest: sends test notification") {
     let (app, n, _, _) = makeTestApp()
 
-    app.runTest()
+    app.test()
 
     assert(n.calls.count == 1, "expected 1 notification, got \(n.calls.count)")
     assert(n.calls[0].title == "Test Notification", "unexpected title: \(n.calls[0].title)")
