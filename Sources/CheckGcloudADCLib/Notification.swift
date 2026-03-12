@@ -2,8 +2,6 @@ import Foundation
 import AppKit
 import UserNotifications
 
-private let kURLScheme = "check-gcloud-adc"
-
 public final class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
     private var handler: ActionHandler?
     private let center = UNUserNotificationCenter.current()
@@ -249,7 +247,7 @@ private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, N
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            guard url.scheme == kURLScheme else { continue }
+            guard url.scheme == AppURL.scheme else { continue }
             switch url.host {
             case "reauth":
                 reauthProcess = runReauth()
@@ -296,7 +294,7 @@ private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, N
     @objc func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
         guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: urlString),
-              url.scheme == kURLScheme else {
+              url.scheme == AppURL.scheme else {
             return
         }
         switch url.host {
