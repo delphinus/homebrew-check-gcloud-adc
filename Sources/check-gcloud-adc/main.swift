@@ -3,7 +3,7 @@ import Foundation
 
 let notificationSystem = NotificationSystem()
 
-if notificationSystem.handlePendingActions() {
+guard !notificationSystem.handlePendingActions() else {
     exit(0)
 }
 
@@ -34,9 +34,9 @@ let app = App(
 )
 
 if args.contains("--reset") {
-    app.runReset()
+    app.reset()
 } else if args.contains("--test") {
-    app.runTest()
+    app.test()
 } else {
-    app.runCheck()
+    app.check()
 }
