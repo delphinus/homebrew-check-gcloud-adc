@@ -1,9 +1,5 @@
 import Foundation
 
-public protocol ADCChecker {
-    func check() -> Bool
-}
-
 public protocol Notifier {
     func send(title: String, message: String, isTest: Bool)
 }
@@ -17,24 +13,6 @@ public protocol ActionWaiter {
     func waitForAction(timeoutSeconds: Double) -> Bool
 }
 
-public final class GcloudADCChecker: ADCChecker {
-    public init() {}
-
-    public func check() -> Bool {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        task.arguments = ["gcloud", "auth", "application-default", "print-access-token", "--quiet"]
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-            return task.terminationStatus == 0
-        } catch {
-            return false
-        }
-    }
-}
 
 public final class App {
     private let notifier: Notifier
