@@ -37,10 +37,10 @@ public final class GcloudADCChecker: ADCChecker {
 }
 
 public final class App {
-    let notifier: Notifier
-    let adcChecker: ADCChecker
-    let deliveryChecker: DeliveryChecker
-    let actionWaiter: ActionWaiter
+    private let notifier: Notifier
+    private let adcChecker: ADCChecker
+    private let deliveryChecker: DeliveryChecker
+    private let actionWaiter: ActionWaiter
 
     public init(
         notifier: Notifier,
