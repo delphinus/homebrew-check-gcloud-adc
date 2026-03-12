@@ -79,7 +79,7 @@ public class App {
         }
     }
 
-    public func runCheck() {
+    public func check() {
         if adcChecker.check() {
             return
         }

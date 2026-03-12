@@ -38,5 +38,5 @@ if args.contains("--reset") {
 } else if args.contains("--test") {
     app.test()
 } else {
-    app.runCheck()
+    app.check()
 }
