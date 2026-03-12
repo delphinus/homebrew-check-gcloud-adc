@@ -1,9 +1,5 @@
 import Foundation
 
-public protocol ADCChecker {
-    func check() -> Bool
-}
-
 public final class GcloudADCChecker {
     public init() {}
 }

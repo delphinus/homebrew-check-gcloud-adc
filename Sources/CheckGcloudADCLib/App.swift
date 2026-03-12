@@ -1,7 +1,13 @@
 import Foundation
 
+// MARK: - Protocols
+
 public protocol Notifier {
     func send(title: String, message: String, isTest: Bool)
+}
+
+public protocol ADCChecker {
+    func check() -> Bool
 }
 
 public protocol DeliveryChecker {
@@ -13,18 +19,19 @@ public protocol ActionWaiter {
     func waitForAction(timeoutSeconds: Double) -> Bool
 }
 
+// MARK: - App
 
 public final class App {
-    private let notifier: Notifier
-    private let adcChecker: ADCChecker
-    private let deliveryChecker: DeliveryChecker
-    private let actionWaiter: ActionWaiter
+    private let notifier: any Notifier
+    private let adcChecker: any ADCChecker
+    private let deliveryChecker: any DeliveryChecker
+    private let actionWaiter: any ActionWaiter
 
     public init(
-        notifier: Notifier,
-        adcChecker: ADCChecker,
-        deliveryChecker: DeliveryChecker,
-        actionWaiter: ActionWaiter
+        notifier: any Notifier,
+        adcChecker: any ADCChecker,
+        deliveryChecker: any DeliveryChecker,
+        actionWaiter: any ActionWaiter
     ) {
         self.notifier = notifier
         self.adcChecker = adcChecker
