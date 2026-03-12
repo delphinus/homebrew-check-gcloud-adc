@@ -2,10 +2,6 @@ import Foundation
 import AppKit
 import UserNotifications
 
-private let kReauthCategoryIdentifier = "REAUTH_CATEGORY"
-private let kReauthActionIdentifier = "REAUTH_ACTION"
-private let kTestCategoryIdentifier = "TEST_CATEGORY"
-private let kTestActionIdentifier = "TEST_ACTION"
 private let kRepoURL = "https://github.com/delphinus/homebrew-check-gcloud-adc"
 private let kURLScheme = "check-gcloud-adc"
 
@@ -45,7 +41,7 @@ public final class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
         content.title = title
         content.body = message
         content.sound = .default
-        content.categoryIdentifier = isTest ? kTestCategoryIdentifier : kReauthCategoryIdentifier
+        content.categoryIdentifier = isTest ? Identifier.testCategory : Identifier.reauthCategory
 
         let request = UNNotificationRequest(
             identifier: "check-gcloud-adc",
@@ -115,24 +111,24 @@ private extension NotificationSystem {
 
     func registerNotificationCategories() {
         let reauthAction = UNNotificationAction(
-            identifier: kReauthActionIdentifier,
+            identifier: Identifier.reauthAction,
             title: "Re-authenticate",
             options: []
         )
         let reauthCategory = UNNotificationCategory(
-            identifier: kReauthCategoryIdentifier,
+            identifier: Identifier.reauthCategory,
             actions: [reauthAction],
             intentIdentifiers: [],
             options: []
         )
 
         let testAction = UNNotificationAction(
-            identifier: kTestActionIdentifier,
+            identifier: Identifier.testAction,
             title: "Open Repository",
             options: []
         )
         let testCategory = UNNotificationCategory(
-            identifier: kTestCategoryIdentifier,
+            identifier: Identifier.testCategory,
             actions: [testAction],
             intentIdentifiers: [],
             options: []
@@ -168,8 +164,12 @@ private extension NotificationSystem {
 
         if let ctx = NSGraphicsContext.current?.cgContext {
             let radius = s * 0.2
-            let bgPath = CGPath(roundedRect: CGRect(x: 0, y: 0, width: s, height: s),
-                                cornerWidth: radius, cornerHeight: radius, transform: nil)
+            let bgPath = CGPath(
+                roundedRect: CGRect(x: 0, y: 0, width: s, height: s),
+                cornerWidth: radius,
+                cornerHeight: radius,
+                transform: nil
+            )
             ctx.addPath(bgPath)
             ctx.clip()
 
@@ -201,9 +201,12 @@ private extension NotificationSystem {
                     let sz = configured.size
                     let x = (s - sz.width) / 2
                     let y = (s - sz.height) / 2 + s * 0.08
-                    drawTintedSymbol("cloud.fill", pointSize: s * 0.45,
-                                     color: NSColor.white.withAlphaComponent(0.95),
-                                     in: NSRect(x: x, y: y, width: sz.width, height: sz.height))
+                    drawTintedSymbol(
+                        "cloud.fill",
+                        pointSize: s * 0.45,
+                        color: NSColor.white.withAlphaComponent(0.95),
+                        in: NSRect(x: x, y: y, width: sz.width, height: sz.height)
+                    )
                 }
             }
 
@@ -218,9 +221,12 @@ private extension NotificationSystem {
                     let cy = y + (sz.height - circleSize) / 2
                     NSColor(red: 0.1, green: 0.25, blue: 0.6, alpha: 0.7).setFill()
                     NSBezierPath(ovalIn: NSRect(x: cx, y: cy, width: circleSize, height: circleSize)).fill()
-                    drawTintedSymbol("key.fill", pointSize: s * 0.22,
-                                     color: NSColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1.0),
-                                     in: NSRect(x: x, y: y, width: sz.width, height: sz.height))
+                    drawTintedSymbol(
+                        "key.fill",
+                        pointSize: s * 0.22,
+                        color: NSColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1.0),
+                        in: NSRect(x: x, y: y, width: sz.width, height: sz.height)
+                    )
                 }
             }
         }
@@ -274,12 +280,12 @@ private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, N
     ) {
         let categoryId = response.notification.request.content.categoryIdentifier
 
-        if categoryId == kTestCategoryIdentifier {
+        if categoryId == Identifier.testCategory {
             if let url = URL(string: kRepoURL) {
                 NSWorkspace.shared.open(url)
             }
-        } else if categoryId == kReauthCategoryIdentifier {
-            if response.actionIdentifier == kReauthActionIdentifier ||
+        } else if categoryId == Identifier.reauthCategory {
+            if response.actionIdentifier == Identifier.reauthAction ||
                response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                 reauthProcess = runReauth()
             }
