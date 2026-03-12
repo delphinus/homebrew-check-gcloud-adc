@@ -80,11 +80,8 @@ public final class App {
     }
 
     public func check() {
-        if adcChecker.check() {
-            return
-        }
-
-        if deliveryChecker.isDelivered() {
+        guard !adcChecker.check(),
+        !deliveryChecker.isDelivered() else {
             return
         }
 
