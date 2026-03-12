@@ -89,7 +89,7 @@ test("check: ADC invalid, already delivered -> no notification") {
     assert(n.calls.isEmpty, "expected no notification")
 }
 
-test("runTest: sends test notification") {
+test("test: sends test notification") {
     let (app, n, _, _) = makeTestApp()
 
     app.test()
