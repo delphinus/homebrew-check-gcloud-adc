@@ -233,14 +233,6 @@ private extension NotificationSystem {
     }
 }
 
-private func runReauth() -> Process? {
-    let task = Process()
-    task.launchPath = "/bin/zsh"
-    task.arguments = ["-l", "-c", "gcloud auth login --update-adc"]
-    try? task.run()
-    return task
-}
-
 private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDelegate {
     var actionHandled = false
     var reauthProcess: Process?
@@ -250,7 +242,7 @@ private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, N
             guard url.scheme == AppURL.scheme else { continue }
             switch url.host {
             case "reauth":
-                reauthProcess = runReauth()
+                reauthProcess = GcloudReauth.run()
             case "open-repo":
                 if let repoURL = AppURL.repo {
                     NSWorkspace.shared.open(repoURL)
@@ -284,7 +276,7 @@ private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, N
         } else if categoryId == Identifier.reauthCategory {
             if response.actionIdentifier == Identifier.reauthAction ||
                response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                reauthProcess = runReauth()
+                reauthProcess = GcloudReauth.run()
             }
         }
         actionHandled = true
@@ -299,7 +291,7 @@ private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, N
         }
         switch url.host {
         case "reauth":
-            reauthProcess = runReauth()
+            reauthProcess = GcloudReauth.run()
         case "open-repo":
             if let repoURL = AppURL.repo {
                 NSWorkspace.shared.open(repoURL)
