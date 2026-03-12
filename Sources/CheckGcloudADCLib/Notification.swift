@@ -2,7 +2,6 @@ import Foundation
 import AppKit
 import UserNotifications
 
-private let kRepoURL = "https://github.com/delphinus/homebrew-check-gcloud-adc"
 private let kURLScheme = "check-gcloud-adc"
 
 public final class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
@@ -255,7 +254,7 @@ private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, N
             case "reauth":
                 reauthProcess = runReauth()
             case "open-repo":
-                if let repoURL = URL(string: kRepoURL) {
+                if let repoURL = AppURL.repo {
                     NSWorkspace.shared.open(repoURL)
                 }
             default:
@@ -281,7 +280,7 @@ private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, N
         let categoryId = response.notification.request.content.categoryIdentifier
 
         if categoryId == Identifier.testCategory {
-            if let url = URL(string: kRepoURL) {
+            if let url = AppURL.repo {
                 NSWorkspace.shared.open(url)
             }
         } else if categoryId == Identifier.reauthCategory {
@@ -304,7 +303,7 @@ private final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, N
         case "reauth":
             reauthProcess = runReauth()
         case "open-repo":
-            if let repoURL = URL(string: kRepoURL) {
+            if let repoURL = AppURL.repo {
                 NSWorkspace.shared.open(repoURL)
             }
         default:
