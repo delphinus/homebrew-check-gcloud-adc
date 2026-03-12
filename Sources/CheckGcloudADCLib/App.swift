@@ -17,7 +17,7 @@ public protocol ActionWaiter {
     func waitForAction(timeoutSeconds: Double) -> Bool
 }
 
-public class GcloudADCChecker: ADCChecker {
+public final class GcloudADCChecker: ADCChecker {
     public init() {}
 
     public func check() -> Bool {
@@ -36,7 +36,7 @@ public class GcloudADCChecker: ADCChecker {
     }
 }
 
-public class App {
+public final class App {
     let notifier: Notifier
     let adcChecker: ADCChecker
     let deliveryChecker: DeliveryChecker

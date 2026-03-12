@@ -7,7 +7,7 @@ struct NotifyCall {
     let isTest: Bool
 }
 
-class MockNotifier: Notifier {
+final class MockNotifier: Notifier {
     var calls: [NotifyCall] = []
 
     func send(title: String, message: String, isTest: Bool) {
@@ -15,19 +15,19 @@ class MockNotifier: Notifier {
     }
 }
 
-class MockADCChecker: ADCChecker {
+final class MockADCChecker: ADCChecker {
     var valid = false
 
     func check() -> Bool { valid }
 }
 
-class MockDeliveryChecker: DeliveryChecker {
+final class MockDeliveryChecker: DeliveryChecker {
     var delivered = false
 
     func isDelivered() -> Bool { delivered }
 }
 
-class MockActionWaiter: ActionWaiter {
+final class MockActionWaiter: ActionWaiter {
     func waitForAction(timeoutSeconds: Double) -> Bool { false }
 }
 

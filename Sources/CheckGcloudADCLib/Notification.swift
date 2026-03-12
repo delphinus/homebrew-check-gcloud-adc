@@ -17,7 +17,7 @@ private func runReauth() -> Process? {
     return task
 }
 
-class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDelegate {
+final class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDelegate {
     var actionHandled = false
     var reauthProcess: Process?
 
@@ -87,7 +87,7 @@ class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDe
     }
 }
 
-public class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
+public final class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
     private var handler: ActionHandler?
     private let center = UNUserNotificationCenter.current()
 
