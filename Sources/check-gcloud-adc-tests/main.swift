@@ -5,26 +5,30 @@ struct NotifyCall {
     let title: String
     let message: String
     let isTest: Bool
+    let identifier: String
+    let account: String?
 }
 
 final class MockNotifier: Notifier {
     var calls: [NotifyCall] = []
 
-    func send(title: String, message: String, isTest: Bool) {
-        calls.append(NotifyCall(title: title, message: message, isTest: isTest))
+    func send(title: String, message: String, isTest: Bool, identifier: String, account: String?) {
+        calls.append(NotifyCall(title: title, message: message, isTest: isTest, identifier: identifier, account: account))
     }
 }
 
 final class MockADCChecker: ADCChecker {
-    var valid = false
+    var expiredAccounts: [String] = []
 
-    func check() -> Bool { valid }
+    func checkAll() -> [String] { expiredAccounts }
 }
 
 final class MockDeliveryChecker: DeliveryChecker {
-    var delivered = false
+    var deliveredIdentifiers: Set<String> = []
 
-    func isDelivered() -> Bool { delivered }
+    func isDelivered(identifier: String) -> Bool {
+        deliveredIdentifiers.contains(identifier)
+    }
 }
 
 final class MockActionWaiter: ActionWaiter {
@@ -58,35 +62,59 @@ func test(_ name: String, _ body: () -> Void) {
 
 print("Running tests...")
 
-test("check: ADC valid -> no notification") {
-    let (app, n, c, _) = makeTestApp()
-    c.valid = true
+test("check: all accounts valid -> no notification") {
+    let (app, n, _, _) = makeTestApp()
 
     app.check()
 
     assert(n.calls.isEmpty, "expected no notification")
 }
 
-test("check: ADC invalid, not delivered -> sends notification") {
+test("check: one account expired, not delivered -> sends notification") {
     let (app, n, c, d) = makeTestApp()
-    c.valid = false
-    d.delivered = false
+    c.expiredAccounts = ["user@example.com"]
+    d.deliveredIdentifiers = []
 
     app.check()
 
     assert(n.calls.count == 1, "expected 1 notification, got \(n.calls.count)")
     assert(n.calls[0].title == "Google Cloud ADC Expired", "unexpected title: \(n.calls[0].title)")
+    assert(n.calls[0].account == "user@example.com", "unexpected account: \(n.calls[0].account ?? "nil")")
+    assert(n.calls[0].identifier == "check-gcloud-adc-user@example.com", "unexpected identifier: \(n.calls[0].identifier)")
     assert(n.calls[0].isTest == false, "expected isTest to be false")
 }
 
-test("check: ADC invalid, already delivered -> no notification") {
+test("check: one account expired, already delivered -> no notification") {
     let (app, n, c, d) = makeTestApp()
-    c.valid = false
-    d.delivered = true
+    c.expiredAccounts = ["user@example.com"]
+    d.deliveredIdentifiers = ["check-gcloud-adc-user@example.com"]
 
     app.check()
 
     assert(n.calls.isEmpty, "expected no notification")
+}
+
+test("check: multiple accounts expired -> sends multiple notifications") {
+    let (app, n, c, d) = makeTestApp()
+    c.expiredAccounts = ["user1@example.com", "user2@example.com"]
+    d.deliveredIdentifiers = []
+
+    app.check()
+
+    assert(n.calls.count == 2, "expected 2 notifications, got \(n.calls.count)")
+    assert(n.calls[0].account == "user1@example.com", "unexpected first account")
+    assert(n.calls[1].account == "user2@example.com", "unexpected second account")
+}
+
+test("check: multiple expired, one already delivered -> sends only new") {
+    let (app, n, c, d) = makeTestApp()
+    c.expiredAccounts = ["user1@example.com", "user2@example.com"]
+    d.deliveredIdentifiers = ["check-gcloud-adc-user1@example.com"]
+
+    app.check()
+
+    assert(n.calls.count == 1, "expected 1 notification, got \(n.calls.count)")
+    assert(n.calls[0].account == "user2@example.com", "unexpected account")
 }
 
 test("test: sends test notification") {

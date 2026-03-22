@@ -65,7 +65,8 @@ extension ActionHandler: UNUserNotificationCenterDelegate {
         } else if categoryId == Identifier.reauthCategory {
             if response.actionIdentifier == Identifier.reauthAction ||
                response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                reauthProcess = GcloudReauth.run()
+                let account = response.notification.request.content.userInfo["account"] as? String
+                reauthProcess = GcloudReauth.run(account: account)
             }
         }
         actionHandled = true

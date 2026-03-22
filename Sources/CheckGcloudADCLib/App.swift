@@ -3,15 +3,15 @@ import Foundation
 // MARK: - Protocols
 
 public protocol Notifier {
-    func send(title: String, message: String, isTest: Bool)
+    func send(title: String, message: String, isTest: Bool, identifier: String, account: String?)
 }
 
 public protocol ADCChecker {
-    func check() -> Bool
+    func checkAll() -> [String]
 }
 
 public protocol DeliveryChecker {
-    func isDelivered() -> Bool
+    func isDelivered(identifier: String) -> Bool
 }
 
 public protocol ActionWaiter {
@@ -40,7 +40,13 @@ public final class App {
     }
 
     public func test() {
-        notifier.send(title: "Test Notification", message: "Notifications are working!", isTest: true)
+        notifier.send(
+            title: "Test Notification",
+            message: "Notifications are working!",
+            isTest: true,
+            identifier: "check-gcloud-adc-test",
+            account: nil
+        )
         print("Notification sent. Waiting for click... (Ctrl+C to cancel)")
         if actionWaiter.waitForAction(timeoutSeconds: 120) {
             print("Notification action handled.")
@@ -65,19 +71,25 @@ public final class App {
     }
 
     public func check() {
-        guard !adcChecker.check(),
-              !deliveryChecker.isDelivered() else {
-            return
+        let expiredAccounts = adcChecker.checkAll()
+        guard !expiredAccounts.isEmpty else { return }
+
+        var sent = false
+        for account in expiredAccounts {
+            let identifier = "check-gcloud-adc-\(account)"
+            guard !deliveryChecker.isDelivered(identifier: identifier) else { continue }
+            notifier.send(
+                title: "Google Cloud ADC Expired",
+                message: "\(account): Click to re-authenticate with gcloud auth login --update-adc",
+                isTest: false,
+                identifier: identifier,
+                account: account
+            )
+            sent = true
         }
 
-        notifier.send(
-            title: "Google Cloud ADC Expired",
-            message: "Click to re-authenticate with gcloud auth login --update-adc",
-            isTest: false
-        )
-
-        // Keep the process alive to handle the notification action when clicked.
-        // The service interval is 300s, so wait up to 270s.
-        actionWaiter.waitForAction(timeoutSeconds: 270)
+        if sent {
+            actionWaiter.waitForAction(timeoutSeconds: 270)
+        }
     }
 }

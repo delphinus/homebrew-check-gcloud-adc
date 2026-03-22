@@ -15,7 +15,7 @@ public final class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
         return handler.actionHandled
     }
 
-    public func send(title: String, message: String, isTest: Bool) {
+    public func send(title: String, message: String, isTest: Bool, identifier: String, account: String?) {
         _ = ensureSetup()
 
         let sema = DispatchSemaphore(value: 0)
@@ -39,9 +39,12 @@ public final class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
         content.body = message
         content.sound = .default
         content.categoryIdentifier = isTest ? Identifier.testCategory : Identifier.reauthCategory
+        if let account = account {
+            content.userInfo = ["account": account]
+        }
 
         let request = UNNotificationRequest(
-            identifier: "check-gcloud-adc",
+            identifier: identifier,
             content: content,
             trigger: nil
         )
@@ -56,11 +59,11 @@ public final class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
         deliverSema.wait()
     }
 
-    public func isDelivered() -> Bool {
+    public func isDelivered(identifier: String) -> Bool {
         let sema = DispatchSemaphore(value: 0)
         var found = false
         center.getDeliveredNotifications { notifications in
-            found = notifications.contains { $0.request.identifier == "check-gcloud-adc" }
+            found = notifications.contains { $0.request.identifier == identifier }
             sema.signal()
         }
         sema.wait()
