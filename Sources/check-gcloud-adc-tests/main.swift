@@ -7,7 +7,7 @@ struct NotifyCall {
     let isTest: Bool
 }
 
-class MockNotifier: Notifier {
+final class MockNotifier: Notifier {
     var calls: [NotifyCall] = []
 
     func send(title: String, message: String, isTest: Bool) {
@@ -15,19 +15,19 @@ class MockNotifier: Notifier {
     }
 }
 
-class MockADCChecker: ADCChecker {
+final class MockADCChecker: ADCChecker {
     var valid = false
 
     func check() -> Bool { valid }
 }
 
-class MockDeliveryChecker: DeliveryChecker {
+final class MockDeliveryChecker: DeliveryChecker {
     var delivered = false
 
     func isDelivered() -> Bool { delivered }
 }
 
-class MockActionWaiter: ActionWaiter {
+final class MockActionWaiter: ActionWaiter {
     func waitForAction(timeoutSeconds: Double) -> Bool { false }
 }
 
@@ -58,41 +58,41 @@ func test(_ name: String, _ body: () -> Void) {
 
 print("Running tests...")
 
-test("runCheck: ADC valid -> no notification") {
+test("check: ADC valid -> no notification") {
     let (app, n, c, _) = makeTestApp()
     c.valid = true
 
-    app.runCheck()
+    app.check()
 
     assert(n.calls.isEmpty, "expected no notification")
 }
 
-test("runCheck: ADC invalid, not delivered -> sends notification") {
+test("check: ADC invalid, not delivered -> sends notification") {
     let (app, n, c, d) = makeTestApp()
     c.valid = false
     d.delivered = false
 
-    app.runCheck()
+    app.check()
 
     assert(n.calls.count == 1, "expected 1 notification, got \(n.calls.count)")
     assert(n.calls[0].title == "Google Cloud ADC Expired", "unexpected title: \(n.calls[0].title)")
     assert(n.calls[0].isTest == false, "expected isTest to be false")
 }
 
-test("runCheck: ADC invalid, already delivered -> no notification") {
+test("check: ADC invalid, already delivered -> no notification") {
     let (app, n, c, d) = makeTestApp()
     c.valid = false
     d.delivered = true
 
-    app.runCheck()
+    app.check()
 
     assert(n.calls.isEmpty, "expected no notification")
 }
 
-test("runTest: sends test notification") {
+test("test: sends test notification") {
     let (app, n, _, _) = makeTestApp()
 
-    app.runTest()
+    app.test()
 
     assert(n.calls.count == 1, "expected 1 notification, got \(n.calls.count)")
     assert(n.calls[0].title == "Test Notification", "unexpected title: \(n.calls[0].title)")

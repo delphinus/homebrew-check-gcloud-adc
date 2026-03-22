@@ -1,11 +1,13 @@
 import Foundation
 
-public protocol ADCChecker {
-    func check() -> Bool
-}
+// MARK: - Protocols
 
 public protocol Notifier {
     func send(title: String, message: String, isTest: Bool)
+}
+
+public protocol ADCChecker {
+    func check() -> Bool
 }
 
 public protocol DeliveryChecker {
@@ -17,36 +19,19 @@ public protocol ActionWaiter {
     func waitForAction(timeoutSeconds: Double) -> Bool
 }
 
-public class GcloudADCChecker: ADCChecker {
-    public init() {}
+// MARK: - App
 
-    public func check() -> Bool {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        task.arguments = ["gcloud", "auth", "application-default", "print-access-token", "--quiet"]
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-            return task.terminationStatus == 0
-        } catch {
-            return false
-        }
-    }
-}
-
-public class App {
-    let notifier: Notifier
-    let adcChecker: ADCChecker
-    let deliveryChecker: DeliveryChecker
-    let actionWaiter: ActionWaiter
+public final class App {
+    private let notifier: any Notifier
+    private let adcChecker: any ADCChecker
+    private let deliveryChecker: any DeliveryChecker
+    private let actionWaiter: any ActionWaiter
 
     public init(
-        notifier: Notifier,
-        adcChecker: ADCChecker,
-        deliveryChecker: DeliveryChecker,
-        actionWaiter: ActionWaiter
+        notifier: any Notifier,
+        adcChecker: any ADCChecker,
+        deliveryChecker: any DeliveryChecker,
+        actionWaiter: any ActionWaiter
     ) {
         self.notifier = notifier
         self.adcChecker = adcChecker
@@ -54,7 +39,7 @@ public class App {
         self.actionWaiter = actionWaiter
     }
 
-    public func runTest() {
+    public func test() {
         notifier.send(title: "Test Notification", message: "Notifications are working!", isTest: true)
         print("Notification sent. Waiting for click... (Ctrl+C to cancel)")
         if actionWaiter.waitForAction(timeoutSeconds: 120) {
@@ -64,7 +49,7 @@ public class App {
         }
     }
 
-    public func runReset() {
+    public func reset() {
         print("Opening System Settings > Notifications...")
         print("Tip: Set the notification style to \"Alerts\" so notifications stay until clicked.")
         let task = Process()
@@ -79,12 +64,9 @@ public class App {
         }
     }
 
-    public func runCheck() {
-        if adcChecker.check() {
-            return
-        }
-
-        if deliveryChecker.isDelivered() {
+    public func check() {
+        guard !adcChecker.check(),
+              !deliveryChecker.isDelivered() else {
             return
         }
 

@@ -2,171 +2,11 @@ import Foundation
 import AppKit
 import UserNotifications
 
-private let kReauthCategoryIdentifier = "REAUTH_CATEGORY"
-private let kReauthActionIdentifier = "REAUTH_ACTION"
-private let kTestCategoryIdentifier = "TEST_CATEGORY"
-private let kTestActionIdentifier = "TEST_ACTION"
-private let kRepoURL = "https://github.com/delphinus/homebrew-check-gcloud-adc"
-private let kURLScheme = "check-gcloud-adc"
-
-private func runReauth() -> Process? {
-    let task = Process()
-    task.launchPath = "/bin/zsh"
-    task.arguments = ["-l", "-c", "gcloud auth login --update-adc"]
-    try? task.run()
-    return task
-}
-
-class ActionHandler: NSObject, UNUserNotificationCenterDelegate, NSApplicationDelegate {
-    var actionHandled = false
-    var reauthProcess: Process?
-
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            guard url.scheme == kURLScheme else { continue }
-            switch url.host {
-            case "reauth":
-                reauthProcess = runReauth()
-            case "open-repo":
-                if let repoURL = URL(string: kRepoURL) {
-                    NSWorkspace.shared.open(repoURL)
-                }
-            default:
-                break
-            }
-            actionHandled = true
-        }
-    }
-
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler([.banner, .sound])
-    }
-
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        let categoryId = response.notification.request.content.categoryIdentifier
-
-        if categoryId == kTestCategoryIdentifier {
-            if let url = URL(string: kRepoURL) {
-                NSWorkspace.shared.open(url)
-            }
-        } else if categoryId == kReauthCategoryIdentifier {
-            if response.actionIdentifier == kReauthActionIdentifier ||
-               response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                reauthProcess = runReauth()
-            }
-        }
-        actionHandled = true
-        completionHandler()
-    }
-
-    @objc func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
-        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
-              let url = URL(string: urlString),
-              url.scheme == kURLScheme else {
-            return
-        }
-        switch url.host {
-        case "reauth":
-            reauthProcess = runReauth()
-        case "open-repo":
-            if let repoURL = URL(string: kRepoURL) {
-                NSWorkspace.shared.open(repoURL)
-            }
-        default:
-            break
-        }
-        actionHandled = true
-    }
-}
-
-public class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
+public final class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
     private var handler: ActionHandler?
     private let center = UNUserNotificationCenter.current()
 
     public init() {}
-
-    private func ensureSetup() -> ActionHandler {
-        if let handler = self.handler { return handler }
-
-        _ = NSApplication.shared
-        NSApp.setActivationPolicy(.accessory)
-        NSApp.applicationIconImage = generateIconImage()
-
-        let handler = ActionHandler()
-        self.handler = handler
-
-        NSApp.delegate = handler
-
-        NSAppleEventManager.shared().setEventHandler(
-            handler,
-            andSelector: #selector(ActionHandler.handleGetURL(_:withReplyEvent:)),
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL)
-        )
-
-        NSApp.finishLaunching()
-
-        center.delegate = handler
-        registerNotificationCategories()
-
-        return handler
-    }
-
-    private func registerNotificationCategories() {
-        let reauthAction = UNNotificationAction(
-            identifier: kReauthActionIdentifier,
-            title: "Re-authenticate",
-            options: []
-        )
-        let reauthCategory = UNNotificationCategory(
-            identifier: kReauthCategoryIdentifier,
-            actions: [reauthAction],
-            intentIdentifiers: [],
-            options: []
-        )
-
-        let testAction = UNNotificationAction(
-            identifier: kTestActionIdentifier,
-            title: "Open Repository",
-            options: []
-        )
-        let testCategory = UNNotificationCategory(
-            identifier: kTestCategoryIdentifier,
-            actions: [testAction],
-            intentIdentifiers: [],
-            options: []
-        )
-
-        center.setNotificationCategories([reauthCategory, testCategory])
-    }
-
-    private func runEventLoop(handler: ActionHandler, timeoutSeconds: Double) {
-        let timeout = Date(timeIntervalSinceNow: timeoutSeconds)
-        while !handler.actionHandled && Date() < timeout {
-            if let event = NSApp.nextEvent(
-                matching: .any,
-                until: Date(timeIntervalSinceNow: 0.1),
-                inMode: .default,
-                dequeue: true
-            ) {
-                NSApp.sendEvent(event)
-            }
-        }
-    }
-
-    private func waitForReauth(handler: ActionHandler) {
-        if let proc = handler.reauthProcess, proc.isRunning {
-            proc.waitUntilExit()
-        }
-    }
 
     public func handlePendingActions() -> Bool {
         let handler = ensureSetup()
@@ -198,7 +38,7 @@ public class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
         content.title = title
         content.body = message
         content.sound = .default
-        content.categoryIdentifier = isTest ? kTestCategoryIdentifier : kReauthCategoryIdentifier
+        content.categoryIdentifier = isTest ? Identifier.testCategory : Identifier.reauthCategory
 
         let request = UNNotificationRequest(
             identifier: "check-gcloud-adc",
@@ -236,70 +76,159 @@ public class NotificationSystem: Notifier, DeliveryChecker, ActionWaiter {
     }
 }
 
-private func generateIconImage() -> NSImage {
-    let s: CGFloat = 256
-    let image = NSImage(size: NSSize(width: s, height: s))
-    image.lockFocus()
+// MARK: - Privates
 
-    if let ctx = NSGraphicsContext.current?.cgContext {
-        let radius = s * 0.2
-        let bgPath = CGPath(roundedRect: CGRect(x: 0, y: 0, width: s, height: s),
-                            cornerWidth: radius, cornerHeight: radius, transform: nil)
-        ctx.addPath(bgPath)
-        ctx.clip()
+private extension NotificationSystem {
+    func ensureSetup() -> ActionHandler {
+        if let handler = self.handler { return handler }
 
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let colors = [
-            CGColor(red: 0.25, green: 0.55, blue: 0.95, alpha: 1.0),
-            CGColor(red: 0.15, green: 0.35, blue: 0.75, alpha: 1.0),
-        ] as CFArray
-        let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: [0.0, 1.0])!
-        ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: s), end: CGPoint(x: 0, y: 0), options: [])
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.accessory)
+        NSApp.applicationIconImage = generateIconImage()
 
-        func drawTintedSymbol(_ name: String, pointSize: CGFloat, color: NSColor, in rect: NSRect) {
-            guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return }
-            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .bold)
-            guard let configured = symbol.withSymbolConfiguration(config) else { return }
-            let tinted = NSImage(size: configured.size)
-            tinted.lockFocus()
-            color.set()
-            let tintRect = NSRect(origin: .zero, size: configured.size)
-            configured.draw(in: tintRect)
-            tintRect.fill(using: .sourceAtop)
-            tinted.unlockFocus()
-            tinted.draw(in: rect)
-        }
+        let handler = ActionHandler()
+        self.handler = handler
 
-        if let cloudSymbol = NSImage(systemSymbolName: "cloud.fill", accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: s * 0.45, weight: .bold)
-            if let configured = cloudSymbol.withSymbolConfiguration(config) {
-                let sz = configured.size
-                let x = (s - sz.width) / 2
-                let y = (s - sz.height) / 2 + s * 0.08
-                drawTintedSymbol("cloud.fill", pointSize: s * 0.45,
-                                 color: NSColor.white.withAlphaComponent(0.95),
-                                 in: NSRect(x: x, y: y, width: sz.width, height: sz.height))
-            }
-        }
+        NSApp.delegate = handler
 
-        if let keySymbol = NSImage(systemSymbolName: "key.fill", accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: s * 0.22, weight: .bold)
-            if let configured = keySymbol.withSymbolConfiguration(config) {
-                let sz = configured.size
-                let x = (s - sz.width) / 2 + s * 0.12
-                let y = (s - sz.height) / 2 - s * 0.12
-                let circleSize = max(sz.width, sz.height) * 1.4
-                let cx = x + (sz.width - circleSize) / 2
-                let cy = y + (sz.height - circleSize) / 2
-                NSColor(red: 0.1, green: 0.25, blue: 0.6, alpha: 0.7).setFill()
-                NSBezierPath(ovalIn: NSRect(x: cx, y: cy, width: circleSize, height: circleSize)).fill()
-                drawTintedSymbol("key.fill", pointSize: s * 0.22,
-                                 color: NSColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1.0),
-                                 in: NSRect(x: x, y: y, width: sz.width, height: sz.height))
+        NSAppleEventManager.shared().setEventHandler(
+            handler,
+            andSelector: #selector(ActionHandler.handleGetURL(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+
+        NSApp.finishLaunching()
+
+        center.delegate = handler
+        registerNotificationCategories()
+
+        return handler
+    }
+
+    func registerNotificationCategories() {
+        let reauthAction = UNNotificationAction(
+            identifier: Identifier.reauthAction,
+            title: "Re-authenticate",
+            options: []
+        )
+        let reauthCategory = UNNotificationCategory(
+            identifier: Identifier.reauthCategory,
+            actions: [reauthAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        let testAction = UNNotificationAction(
+            identifier: Identifier.testAction,
+            title: "Open Repository",
+            options: []
+        )
+        let testCategory = UNNotificationCategory(
+            identifier: Identifier.testCategory,
+            actions: [testAction],
+            intentIdentifiers: [],
+            options: []
+        )
+
+        center.setNotificationCategories([reauthCategory, testCategory])
+    }
+
+    func runEventLoop(handler: ActionHandler, timeoutSeconds: Double) {
+        let timeout = Date(timeIntervalSinceNow: timeoutSeconds)
+        while !handler.actionHandled && Date() < timeout {
+            if let event = NSApp.nextEvent(
+                matching: .any,
+                until: Date(timeIntervalSinceNow: 0.1),
+                inMode: .default,
+                dequeue: true
+            ) {
+                NSApp.sendEvent(event)
             }
         }
     }
 
-    image.unlockFocus()
-    return image
+    func waitForReauth(handler: ActionHandler) {
+        if let proc = handler.reauthProcess, proc.isRunning {
+            proc.waitUntilExit()
+        }
+    }
+
+    private func generateIconImage() -> NSImage {
+        let s: CGFloat = 256
+        let image = NSImage(size: NSSize(width: s, height: s))
+        image.lockFocus()
+
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            let radius = s * 0.2
+            let bgPath = CGPath(
+                roundedRect: CGRect(x: 0, y: 0, width: s, height: s),
+                cornerWidth: radius,
+                cornerHeight: radius,
+                transform: nil
+            )
+            ctx.addPath(bgPath)
+            ctx.clip()
+
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let colors = [
+                CGColor(red: 0.25, green: 0.55, blue: 0.95, alpha: 1.0),
+                CGColor(red: 0.15, green: 0.35, blue: 0.75, alpha: 1.0),
+            ] as CFArray
+            let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: [0.0, 1.0])!
+            ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: s), end: CGPoint(x: 0, y: 0), options: [])
+
+            func drawTintedSymbol(_ name: String, pointSize: CGFloat, color: NSColor, in rect: NSRect) {
+                guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return }
+                let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .bold)
+                guard let configured = symbol.withSymbolConfiguration(config) else { return }
+                let tinted = NSImage(size: configured.size)
+                tinted.lockFocus()
+                color.set()
+                let tintRect = NSRect(origin: .zero, size: configured.size)
+                configured.draw(in: tintRect)
+                tintRect.fill(using: .sourceAtop)
+                tinted.unlockFocus()
+                tinted.draw(in: rect)
+            }
+
+            if let cloudSymbol = NSImage(systemSymbolName: "cloud.fill", accessibilityDescription: nil) {
+                let config = NSImage.SymbolConfiguration(pointSize: s * 0.45, weight: .bold)
+                if let configured = cloudSymbol.withSymbolConfiguration(config) {
+                    let sz = configured.size
+                    let x = (s - sz.width) / 2
+                    let y = (s - sz.height) / 2 + s * 0.08
+                    drawTintedSymbol(
+                        "cloud.fill",
+                        pointSize: s * 0.45,
+                        color: NSColor.white.withAlphaComponent(0.95),
+                        in: NSRect(x: x, y: y, width: sz.width, height: sz.height)
+                    )
+                }
+            }
+
+            if let keySymbol = NSImage(systemSymbolName: "key.fill", accessibilityDescription: nil) {
+                let config = NSImage.SymbolConfiguration(pointSize: s * 0.22, weight: .bold)
+                if let configured = keySymbol.withSymbolConfiguration(config) {
+                    let sz = configured.size
+                    let x = (s - sz.width) / 2 + s * 0.12
+                    let y = (s - sz.height) / 2 - s * 0.12
+                    let circleSize = max(sz.width, sz.height) * 1.4
+                    let cx = x + (sz.width - circleSize) / 2
+                    let cy = y + (sz.height - circleSize) / 2
+                    NSColor(red: 0.1, green: 0.25, blue: 0.6, alpha: 0.7).setFill()
+                    NSBezierPath(ovalIn: NSRect(x: cx, y: cy, width: circleSize, height: circleSize)).fill()
+                    drawTintedSymbol(
+                        "key.fill",
+                        pointSize: s * 0.22,
+                        color: NSColor(red: 1.0, green: 0.85, blue: 0.3, alpha: 1.0),
+                        in: NSRect(x: x, y: y, width: sz.width, height: sz.height)
+                    )
+                }
+            }
+        }
+
+        image.unlockFocus()
+        return image
+    }
 }
