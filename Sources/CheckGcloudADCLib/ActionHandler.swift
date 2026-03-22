@@ -8,10 +8,14 @@ final class ActionHandler: NSObject {
 
     @objc func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
         guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
-              let url = URL(string: urlString),
-              url.scheme == AppURL.scheme else {
+              let url = URL(string: urlString) else {
             return
         }
+        handleURL(url)
+    }
+
+    private func handleURL(_ url: URL) {
+        guard url.scheme == AppURL.scheme else { return }
         switch url.host {
         case "reauth":
             reauthProcess = GcloudReauth.run()
@@ -31,18 +35,7 @@ final class ActionHandler: NSObject {
 extension ActionHandler: NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            guard url.scheme == AppURL.scheme else { continue }
-            switch url.host {
-            case "reauth":
-                reauthProcess = GcloudReauth.run()
-            case "open-repo":
-                if let repoURL = AppURL.repo {
-                    NSWorkspace.shared.open(repoURL)
-                }
-            default:
-                break
-            }
-            actionHandled = true
+            handleURL(url)
         }
     }
 }

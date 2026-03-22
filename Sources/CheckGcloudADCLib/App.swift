@@ -66,7 +66,7 @@ public final class App {
 
     public func check() {
         guard !adcChecker.check(),
-        !deliveryChecker.isDelivered() else {
+              !deliveryChecker.isDelivered() else {
             return
         }
 
