@@ -17,6 +17,10 @@ build:
 	codesign --force --sign - --identifier com.delphinus.check-gcloud-adc $(APP_BUNDLE)
 
 build-universal:
+ifndef CI
+	@echo "\033[33m[WARNING] build-universal はローカルテスト用です。リリースバイナリは CI が作成します。\033[0m"
+	@echo "\033[33m  リリース手順: git tag vX.Y.Z && git push origin vX.Y.Z\033[0m"
+endif
 	swift build -c release --arch arm64 --arch x86_64
 	swift generate_icon.swift
 	iconutil -c icns AppIcon.iconset -o AppIcon.icns
