@@ -8,19 +8,22 @@ public final class GcloudADCChecker {
 
 extension GcloudADCChecker: ADCChecker {
     public func checkAll() -> [String] {
-        var expired: [String] = []
-
-        // Check Application Default Credentials (global, not per-account)
-        if !checkADC() {
-            expired.append("application-default")
-        }
+        let adcExpired = !checkADC()
 
         // Check per-account auth tokens
+        var expired: [String] = []
         let accounts = listAccounts()
         for account in accounts {
             if !checkToken(account: account) {
                 expired.append(account)
             }
+        }
+
+        // ADC の通知はアカウントが全て有効な場合のみ出す。
+        // アカウントの再認証は --update-adc 付きで行われるため、
+        // アカウントの通知をクリックすれば ADC も同時に更新される。
+        if adcExpired && expired.isEmpty {
+            expired.append("application-default")
         }
 
         return expired

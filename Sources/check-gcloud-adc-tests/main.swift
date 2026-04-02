@@ -78,7 +78,7 @@ test("check: one account expired, not delivered -> sends notification") {
     app.check()
 
     assert(n.calls.count == 1, "expected 1 notification, got \(n.calls.count)")
-    assert(n.calls[0].title == "Google Cloud ADC Expired", "unexpected title: \(n.calls[0].title)")
+    assert(n.calls[0].title == "Google Cloud ADC Expired" || n.calls[0].title == "Google Cloud ADC 期限切れ", "unexpected title: \(n.calls[0].title)")
     assert(n.calls[0].account == "user@example.com", "unexpected account: \(n.calls[0].account ?? "nil")")
     assert(n.calls[0].identifier == "check-gcloud-adc-user@example.com", "unexpected identifier: \(n.calls[0].identifier)")
     assert(n.calls[0].isTest == false, "expected isTest to be false")
@@ -123,7 +123,7 @@ test("test: sends test notification") {
     app.test()
 
     assert(n.calls.count == 1, "expected 1 notification, got \(n.calls.count)")
-    assert(n.calls[0].title == "Test Notification", "unexpected title: \(n.calls[0].title)")
+    assert(n.calls[0].title == "Test Notification" || n.calls[0].title == "テスト通知", "unexpected title: \(n.calls[0].title)")
     assert(n.calls[0].isTest == true, "expected isTest to be true")
 }
 

@@ -41,23 +41,23 @@ public final class App {
 
     public func test() {
         notifier.send(
-            title: "Test Notification",
-            message: "Notifications are working!",
+            title: L10n.notificationTitleTest,
+            message: L10n.notificationMessageTest,
             isTest: true,
             identifier: "check-gcloud-adc-test",
             account: nil
         )
-        print("Notification sent. Waiting for click... (Ctrl+C to cancel)")
+        print(L10n.cliTestWaiting)
         if actionWaiter.waitForAction(timeoutSeconds: 120) {
-            print("Notification action handled.")
+            print(L10n.cliTestHandled)
         } else {
-            print("Timed out waiting for notification click.")
+            print(L10n.cliTestTimeout)
         }
     }
 
     public func reset() {
-        print("Opening System Settings > Notifications...")
-        print("Tip: Set the notification style to \"Alerts\" so notifications stay until clicked.")
+        print(L10n.cliResetOpening)
+        print(L10n.cliResetTip)
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         task.arguments = ["x-apple.systempreferences:com.apple.Notifications-Settings"]
@@ -78,12 +78,15 @@ public final class App {
         for account in expiredAccounts {
             let identifier = "check-gcloud-adc-\(account)"
             guard !deliveryChecker.isDelivered(identifier: identifier) else { continue }
+            let isADC = account == "application-default"
             notifier.send(
-                title: "Google Cloud ADC Expired",
-                message: "\(account): Click to re-authenticate with gcloud auth login --update-adc",
+                title: L10n.notificationTitleExpired,
+                message: isADC
+                    ? L10n.notificationMessageAdcExpired
+                    : L10n.notificationMessageAccountExpired(account),
                 isTest: false,
                 identifier: identifier,
-                account: account
+                account: isADC ? nil : account
             )
             sent = true
         }
