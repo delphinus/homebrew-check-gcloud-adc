@@ -1,0 +1,19 @@
+/* Notification titles */
+"notification.title.expired" = "Google Cloud ADC 期限切れ";
+"notification.title.test" = "テスト通知";
+
+/* Notification messages */
+"notification.message.account_expired" = "%@: gcloud auth login --update-adc で再認証してください";
+"notification.message.adc_expired" = "Application Default Credentials の有効期限が切れました。クリックして再認証してください。";
+"notification.message.test" = "通知は正常に動作しています！";
+
+/* Notification actions */
+"notification.action.reauth" = "再認証";
+"notification.action.open_repo" = "リポジトリを開く";
+
+/* CLI output */
+"cli.test.waiting" = "通知を送信しました。クリックを待っています…（Ctrl+C でキャンセル）";
+"cli.test.handled" = "通知アクションを処理しました。";
+"cli.test.timeout" = "通知クリックの待機がタイムアウトしました。";
+"cli.reset.opening" = "システム設定 > 通知を開いています…";
+"cli.reset.tip" = "ヒント: 通知スタイルを「通知」に設定すると、クリックするまで通知が表示され続けます。";

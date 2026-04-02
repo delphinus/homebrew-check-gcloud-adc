@@ -112,7 +112,7 @@ private extension NotificationSystem {
     func registerNotificationCategories() {
         let reauthAction = UNNotificationAction(
             identifier: Identifier.reauthAction,
-            title: "Re-authenticate",
+            title: L10n.notificationActionReauth,
             options: []
         )
         let reauthCategory = UNNotificationCategory(
@@ -124,7 +124,7 @@ private extension NotificationSystem {
 
         let testAction = UNNotificationAction(
             identifier: Identifier.testAction,
-            title: "Open Repository",
+            title: L10n.notificationActionOpenRepo,
             options: []
         )
         let testCategory = UNNotificationCategory(
