@@ -1,0 +1,45 @@
+name: check-gcloud-adc
+
+options:
+  deploymentTarget:
+    macOS: "13.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5"
+
+targets:
+  CheckGcloudADCLib:
+    type: library.static
+    platform: macOS
+    sources:
+      - Sources/CheckGcloudADCLib
+
+  check-gcloud-adc:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/check-gcloud-adc
+      - path: AppIcon.icns
+        buildPhase: resources
+    dependencies:
+      - target: CheckGcloudADCLib
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.delphinus.check-gcloud-adc
+        INFOPLIST_FILE: Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+
+  check-gcloud-adc-tests:
+    type: tool
+    platform: macOS
+    sources:
+      - Sources/check-gcloud-adc-tests
+    dependencies:
+      - target: CheckGcloudADCLib
+    settings:
+      base:
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual

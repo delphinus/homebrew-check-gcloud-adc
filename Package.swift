@@ -3,13 +3,11 @@ import PackageDescription
 
 let package = Package(
     name: "check-gcloud-adc",
-    defaultLocalization: "en",
     platforms: [.macOS(.v13)],
     targets: [
         .target(
             name: "CheckGcloudADCLib",
-            path: "Sources/CheckGcloudADCLib",
-            resources: [.process("Resources")]
+            path: "Sources/CheckGcloudADCLib"
         ),
         .executableTarget(
             name: "check-gcloud-adc",

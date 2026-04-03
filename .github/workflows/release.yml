@@ -14,6 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
       - name: Build universal binary
         run: make build-universal
 

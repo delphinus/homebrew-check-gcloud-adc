@@ -1,38 +1,29 @@
 BINARY_NAME := check-gcloud-adc
 APP_BUNDLE := $(BINARY_NAME).app
-APP_CONTENTS := $(APP_BUNDLE)/Contents
-APP_MACOS := $(APP_CONTENTS)/MacOS
-APP_RESOURCES := $(APP_CONTENTS)/Resources
+DERIVED_DATA := .build/DerivedData
 
-.PHONY: build build-universal test clean
+.PHONY: generate build build-universal test clean
 
-build:
-	swift build -c release
+generate:
 	swift generate_icon.swift
 	iconutil -c icns AppIcon.iconset -o AppIcon.icns
-	mkdir -p $(APP_MACOS) $(APP_RESOURCES)
-	cp $$(swift build -c release --show-bin-path)/$(BINARY_NAME) $(APP_MACOS)/
-	cp Info.plist $(APP_CONTENTS)/
-	cp AppIcon.icns $(APP_RESOURCES)/
-	codesign --force --sign - --identifier com.delphinus.check-gcloud-adc $(APP_BUNDLE)
+	xcodegen generate
 
-build-universal:
+build: generate
+	xcodebuild -project $(BINARY_NAME).xcodeproj -scheme $(BINARY_NAME) -configuration Release -derivedDataPath $(DERIVED_DATA) build
+	cp -R $(DERIVED_DATA)/Build/Products/Release/$(APP_BUNDLE) .
+
+build-universal: generate
 ifndef CI
 	@echo "\033[33m[WARNING] build-universal はローカルテスト用です。リリースバイナリは CI が作成します。\033[0m"
 	@echo "\033[33m  リリース手順: git tag vX.Y.Z && git push origin vX.Y.Z\033[0m"
 endif
-	swift build -c release --arch arm64 --arch x86_64
-	swift generate_icon.swift
-	iconutil -c icns AppIcon.iconset -o AppIcon.icns
-	mkdir -p $(APP_MACOS) $(APP_RESOURCES)
-	cp $$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/$(BINARY_NAME) $(APP_MACOS)/
-	cp Info.plist $(APP_CONTENTS)/
-	cp AppIcon.icns $(APP_RESOURCES)/
-	codesign --force --sign - --identifier com.delphinus.check-gcloud-adc $(APP_BUNDLE)
+	xcodebuild -project $(BINARY_NAME).xcodeproj -scheme $(BINARY_NAME) -configuration Release -derivedDataPath $(DERIVED_DATA) ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO build
+	cp -R $(DERIVED_DATA)/Build/Products/Release/$(APP_BUNDLE) .
 
-test:
-	swift run check-gcloud-adc-tests
+test: generate
+	xcodebuild -project $(BINARY_NAME).xcodeproj -scheme $(BINARY_NAME)-tests -configuration Debug -derivedDataPath $(DERIVED_DATA) build
+	$(DERIVED_DATA)/Build/Products/Debug/$(BINARY_NAME)-tests
 
 clean:
-	swift package clean
-	rm -rf $(APP_BUNDLE) AppIcon.iconset AppIcon.icns
+	rm -rf $(APP_BUNDLE) $(DERIVED_DATA) *.xcodeproj AppIcon.iconset AppIcon.icns

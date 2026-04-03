@@ -1,47 +1,65 @@
 import Foundation
 
 enum L10n {
+    private static let isJapanese: Bool = {
+        Locale.current.language.languageCode == .japanese
+    }()
+
     // MARK: - Notification titles
     static var notificationTitleExpired: String {
-        NSLocalizedString("notification.title.expired", bundle: .module, comment: "")
+        isJapanese ? "Google Cloud ADC 期限切れ" : "Google Cloud ADC Expired"
     }
     static var notificationTitleTest: String {
-        NSLocalizedString("notification.title.test", bundle: .module, comment: "")
+        isJapanese ? "テスト通知" : "Test Notification"
     }
 
     // MARK: - Notification messages
     static func notificationMessageAccountExpired(_ account: String) -> String {
-        String(format: NSLocalizedString("notification.message.account_expired", bundle: .module, comment: ""), account)
+        if isJapanese {
+            return "\(account): gcloud auth login --update-adc で再認証してください"
+        } else {
+            return "\(account): Click to re-authenticate with gcloud auth login --update-adc"
+        }
     }
     static var notificationMessageAdcExpired: String {
-        NSLocalizedString("notification.message.adc_expired", bundle: .module, comment: "")
+        isJapanese
+            ? "Application Default Credentials の有効期限が切れました。クリックして再認証してください。"
+            : "Application Default Credentials have expired. Click to re-authenticate."
     }
     static var notificationMessageTest: String {
-        NSLocalizedString("notification.message.test", bundle: .module, comment: "")
+        isJapanese ? "通知は正常に動作しています！" : "Notifications are working!"
     }
 
     // MARK: - Notification actions
     static var notificationActionReauth: String {
-        NSLocalizedString("notification.action.reauth", bundle: .module, comment: "")
+        isJapanese ? "再認証" : "Re-authenticate"
     }
     static var notificationActionOpenRepo: String {
-        NSLocalizedString("notification.action.open_repo", bundle: .module, comment: "")
+        isJapanese ? "リポジトリを開く" : "Open Repository"
     }
 
     // MARK: - CLI output
     static var cliTestWaiting: String {
-        NSLocalizedString("cli.test.waiting", bundle: .module, comment: "")
+        isJapanese
+            ? "通知を送信しました。クリックを待っています…（Ctrl+C でキャンセル）"
+            : "Notification sent. Waiting for click... (Ctrl+C to cancel)"
     }
     static var cliTestHandled: String {
-        NSLocalizedString("cli.test.handled", bundle: .module, comment: "")
+        isJapanese ? "通知アクションを処理しました。" : "Notification action handled."
     }
     static var cliTestTimeout: String {
-        NSLocalizedString("cli.test.timeout", bundle: .module, comment: "")
+        isJapanese
+            ? "通知クリックの待機がタイムアウトしました。"
+            : "Timed out waiting for notification click."
     }
     static var cliResetOpening: String {
-        NSLocalizedString("cli.reset.opening", bundle: .module, comment: "")
+        isJapanese
+            ? "システム設定 > 通知を開いています…"
+            : "Opening System Settings > Notifications..."
     }
     static var cliResetTip: String {
-        NSLocalizedString("cli.reset.tip", bundle: .module, comment: "")
+        isJapanese
+            ? "ヒント: 通知スタイルを「通知」に設定すると、クリックするまで通知が表示され続けます。"
+            : "Tip: Set the notification style to \"Alerts\" so notifications stay until clicked."
     }
 }

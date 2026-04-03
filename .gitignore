@@ -1,5 +1,6 @@
 /check-gcloud-adc
 /check-gcloud-adc.app/
+*.xcodeproj
 .build/
 .swiftpm/
 AppIcon.iconset/
