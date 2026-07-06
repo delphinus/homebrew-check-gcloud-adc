@@ -19,9 +19,9 @@ extension GcloudADCChecker: ADCChecker {
             }
         }
 
-        // ADC の通知はアカウントが全て有効な場合のみ出す。
-        // アカウントの再認証は --update-adc 付きで行われるため、
-        // アカウントの通知をクリックすれば ADC も同時に更新される。
+        // ADC の通知はアカウントが全て有効な場合のみ出す。アカウント再認証は
+        // --update-adc 付きなので ADC の期限自体はそこで復旧する。スコープ不足が
+        // 残る場合は次回チェックで adcExpired として拾い直し、専用通知を出す。
         if adcExpired && expired.isEmpty {
             expired.append("application-default")
         }
@@ -55,18 +55,66 @@ private extension GcloudADCChecker {
         }
     }
 
+    /// ADC が「有効」かを判定する。トークンが発行でき、かつ必要スコープを
+    /// すべて含んでいるときのみ true。スコープ不足 (= 他の gcloud login に
+    /// 上書きされて calendar/drive 等が抜けた状態) も無効として扱う。
     func checkADC() -> Bool {
+        guard let token = adcAccessToken() else { return false }
+        return tokenHasRequiredScopes(token)
+    }
+
+    /// ADC からアクセストークンを取得する (失敗時は nil)。
+    func adcAccessToken() -> String? {
         let task = Process()
+        let pipe = Pipe()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         task.arguments = ["gcloud", "auth", "application-default", "print-access-token", "--quiet"]
-        task.standardOutput = FileHandle.nullDevice
+        task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do {
             try task.run()
             task.waitUntilExit()
-            return task.terminationStatus == 0
+            guard task.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let token = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (token?.isEmpty == false) ? token : nil
         } catch {
-            return false
+            return nil
+        }
+    }
+
+    /// tokeninfo で当該トークンのスコープを取得し、必要スコープを
+    /// すべて含むかを判定する。ネットワーク不通など判定不能時は、
+    /// 誤検知 (無用な再認証通知) を避けるため true を返す。
+    func tokenHasRequiredScopes(_ token: String) -> Bool {
+        let required = Scopes.requiredForCheck()
+        if required.isEmpty { return true }
+
+        let task = Process()
+        let pipe = Pipe()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        task.arguments = [
+            "curl", "-s", "--max-time", "10",
+            "https://oauth2.googleapis.com/tokeninfo?access_token=\(token)",
+        ]
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            task.waitUntilExit()
+            guard task.terminationStatus == 0 else { return true }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return true
+            }
+            // tokeninfo がエラーを返した = トークン自体が無効。
+            if json["error"] != nil || json["error_description"] != nil { return false }
+            let scopeStr = (json["scope"] as? String) ?? ""
+            let granted = Set(scopeStr.split(separator: " ").map(String.init))
+            return required.allSatisfy { granted.contains($0) }
+        } catch {
+            return true
         }
     }
 

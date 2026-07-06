@@ -1,13 +1,30 @@
 # check-gcloud-adc
 
-Google Cloud の Application Default Credentials (ADC) トークンの有効性を定期的にチェックし、期限切れの場合に macOS 通知を送信するツールです。通知をクリックすると `gcloud auth login --update-adc` が実行され、ブラウザで再認証できます。
+Google Cloud の Application Default Credentials (ADC) トークンの有効性と必要スコープを定期的にチェックし、無効・スコープ不足の場合に macOS 通知を送信するツールです。通知をクリックすると再認証が実行され、ブラウザで認証できます。
 
 ## 仕組み
 
-- `gcloud auth application-default print-access-token` を実行してトークンの有効性を確認
-- トークンが無効な場合、macOS のネイティブ通知を送信（1 回のみ、再認証まで重複しない）
-- 通知クリックで `gcloud auth login --update-adc` を実行（ブラウザが開いて認証）
+- `gcloud auth application-default print-access-token` でトークンの有効性を確認
+- さらに `tokeninfo` でスコープを検査し、必要スコープ (既定は `calendar.readonly` / `drive.readonly` を含む superset) が欠けていれば無効として扱う
+- 無効・スコープ不足の場合、macOS のネイティブ通知を送信（1 回のみ、再認証まで重複しない）
+- 通知クリックで再認証を実行（ブラウザが開いて認証）
+  - ADC: `gcloud auth application-default login --scopes=<必要スコープ>` — 必要スコープを常に付与するため、他の `gcloud auth application-default login`（スコープ無し）に上書きされても復旧できる
+  - 名前付きアカウント: `gcloud auth login --update-adc <account>`
 - `brew services` により 5 分間隔で自動実行
+
+### 必要スコープの設定
+
+既定では以下の superset を要求・付与する（`calendar.readonly` / `drive.readonly` は Google Meet の議事録取得などに必要）。
+
+```
+openid
+https://www.googleapis.com/auth/userinfo.email
+https://www.googleapis.com/auth/cloud-platform
+https://www.googleapis.com/auth/calendar.readonly
+https://www.googleapis.com/auth/drive.readonly
+```
+
+環境変数 `CHECK_GCLOUD_ADC_SCOPES`（カンマまたは空白区切り）で上書きできる。`brew services` で使う場合はサービスの環境に設定する。
 
 ## インストール
 

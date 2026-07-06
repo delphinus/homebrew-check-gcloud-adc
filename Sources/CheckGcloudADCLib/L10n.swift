@@ -23,8 +23,8 @@ enum L10n {
     }
     static var notificationMessageAdcExpired: String {
         isJapanese
-            ? "Application Default Credentials の有効期限が切れました。クリックして再認証してください。"
-            : "Application Default Credentials have expired. Click to re-authenticate."
+            ? "Application Default Credentials が無効か、必要なスコープが不足しています。クリックして再認証してください。"
+            : "Application Default Credentials are invalid or missing required scopes. Click to re-authenticate."
     }
     static var notificationMessageTest: String {
         isJapanese ? "通知は正常に動作しています！" : "Notifications are working!"

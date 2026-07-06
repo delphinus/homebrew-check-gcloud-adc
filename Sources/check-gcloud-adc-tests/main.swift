@@ -117,6 +117,31 @@ test("check: multiple expired, one already delivered -> sends only new") {
     assert(n.calls[0].account == "user2@example.com", "unexpected account")
 }
 
+test("scopes: default includes calendar and drive") {
+    let resolved = Scopes.resolve([:])
+    assert(resolved == Scopes.defaultScopes, "expected default scopes")
+    assert(resolved.contains("https://www.googleapis.com/auth/calendar.readonly"), "missing calendar scope")
+    assert(resolved.contains("https://www.googleapis.com/auth/drive.readonly"), "missing drive scope")
+}
+
+test("scopes: env override (comma/space separated) wins") {
+    let env = ["CHECK_GCLOUD_ADC_SCOPES": "openid, https://example.com/a  https://example.com/b"]
+    let resolved = Scopes.resolve(env)
+    assert(resolved == ["openid", "https://example.com/a", "https://example.com/b"], "unexpected parse: \(resolved)")
+    assert(Scopes.joined(env) == "openid,https://example.com/a,https://example.com/b", "unexpected join: \(Scopes.joined(env))")
+}
+
+test("scopes: empty env falls back to default") {
+    let resolved = Scopes.resolve(["CHECK_GCLOUD_ADC_SCOPES": "   "])
+    assert(resolved == Scopes.defaultScopes, "expected fallback to default")
+}
+
+test("scopes: requiredForCheck drops openid") {
+    let required = Scopes.requiredForCheck([:])
+    assert(!required.contains("openid"), "openid should be excluded from check set")
+    assert(required.contains("https://www.googleapis.com/auth/calendar.readonly"), "calendar should remain")
+}
+
 test("test: sends test notification") {
     let (app, n, _, _) = makeTestApp()
 
