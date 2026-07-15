@@ -142,6 +142,31 @@ test("scopes: requiredForCheck drops openid") {
     assert(required.contains("https://www.googleapis.com/auth/calendar.readonly"), "calendar should remain")
 }
 
+test("reauth: ADC command sets scopes explicitly") {
+    let cmd = GcloudReauth.command(account: nil, environment: [:])
+    assert(
+        cmd == "gcloud auth application-default login --scopes='\(Scopes.joined([:]))'",
+        "unexpected ADC command: \(cmd)"
+    )
+    assert(cmd.contains("calendar.readonly"), "ADC reauth must request calendar scope")
+    assert(cmd.contains("drive.readonly"), "ADC reauth must request drive scope")
+}
+
+test("reauth: account command reauths CLI then sets ADC scopes") {
+    let cmd = GcloudReauth.command(account: "user@example.com", environment: [:])
+    assert(cmd.hasPrefix("gcloud auth login 'user@example.com' && "), "unexpected prefix: \(cmd)")
+    assert(cmd.contains("application-default login --scopes='"), "account reauth must set ADC scopes")
+    assert(cmd.contains("calendar.readonly"), "account reauth must request calendar scope")
+    assert(cmd.contains("drive.readonly"), "account reauth must request drive scope")
+    // scope 上書きを招く素の --update-adc を使わないこと。
+    assert(!cmd.contains("--update-adc"), "must not rely on --update-adc (drops calendar/drive)")
+}
+
+test("reauth: account name with single quote is escaped") {
+    let cmd = GcloudReauth.command(account: "a'b@example.com", environment: [:])
+    assert(cmd.hasPrefix("gcloud auth login 'a'\\''b@example.com' && "), "unexpected escaping: \(cmd)")
+}
+
 test("test: sends test notification") {
     let (app, n, _, _) = makeTestApp()
 

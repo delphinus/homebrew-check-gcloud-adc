@@ -20,8 +20,9 @@ extension GcloudADCChecker: ADCChecker {
         }
 
         // ADC の通知はアカウントが全て有効な場合のみ出す。アカウント再認証は
-        // --update-adc 付きなので ADC の期限自体はそこで復旧する。スコープ不足が
-        // 残る場合は次回チェックで adcExpired として拾い直し、専用通知を出す。
+        // 後段で ADC を必要スコープ付きで設定し直すので、ADC の期限・スコープも
+        // そこで併せて復旧する。取りこぼしがあっても次回チェックで adcExpired
+        // として拾い直し、専用通知を出す。
         if adcExpired && expired.isEmpty {
             expired.append("application-default")
         }
