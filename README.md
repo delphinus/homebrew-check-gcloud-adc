@@ -26,6 +26,26 @@ https://www.googleapis.com/auth/drive.readonly
 
 環境変数 `CHECK_GCLOUD_ADC_SCOPES`（カンマまたは空白区切り）で上書きできる。`brew services` で使う場合はサービスの環境に設定する。
 
+### チェック対象アカウントの絞り込み
+
+既定では `gcloud auth list` に出る全アカウントのトークンをチェックする。特定のアカウントだけをチェックしたい（使っていないアカウントの通知を止めたい）場合は、許可リストを指定する。指定されたアカウントだけがチェック対象になり、それ以外は無視される（ADC のチェックは許可リストと無関係に常に行う）。
+
+解決順は次のとおり:
+
+1. 環境変数 `CHECK_GCLOUD_ADC_ACCOUNTS`（カンマまたは空白区切り）
+2. 設定ファイル `${XDG_CONFIG_HOME:-~/.config}/check-gcloud-adc/accounts`（1 行 1 アカウント、`#` 以降はコメント、空行無視）
+3. どちらも無ければ全アカウント（従来の挙動）
+
+`brew services` で使う場合は、Formula に個人情報を書かずに済む設定ファイル方式が便利。
+
+```bash
+mkdir -p ~/.config/check-gcloud-adc
+cat > ~/.config/check-gcloud-adc/accounts <<'EOF'
+# トークンチェック対象アカウント (1 行 1 件)
+me@example.com
+EOF
+```
+
 ## インストール
 
 ```bash

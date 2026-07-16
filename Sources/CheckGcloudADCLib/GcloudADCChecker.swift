@@ -10,9 +10,11 @@ extension GcloudADCChecker: ADCChecker {
     public func checkAll() -> [String] {
         let adcExpired = !checkADC()
 
-        // Check per-account auth tokens
+        // Check per-account auth tokens.
+        // 許可リスト (CHECK_GCLOUD_ADC_ACCOUNTS or 設定ファイル) が指定されて
+        // いれば、そこに含まれるアカウントだけをチェックする。未指定なら全件。
         var expired: [String] = []
-        let accounts = listAccounts()
+        let accounts = Accounts.filter(listAccounts(), allowlist: Accounts.resolveAllowlist())
         for account in accounts {
             if !checkToken(account: account) {
                 expired.append(account)

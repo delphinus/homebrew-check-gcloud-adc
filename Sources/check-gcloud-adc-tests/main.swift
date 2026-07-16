@@ -142,6 +142,63 @@ test("scopes: requiredForCheck drops openid") {
     assert(required.contains("https://www.googleapis.com/auth/calendar.readonly"), "calendar should remain")
 }
 
+test("accounts: unset allowlist -> no filtering (all accounts)") {
+    let allow = Accounts.allowlist(environment: [:], configText: nil)
+    assert(allow.isEmpty, "expected empty allowlist")
+    let filtered = Accounts.filter(["a@example.com", "b@example.com"], allowlist: allow)
+    assert(filtered == ["a@example.com", "b@example.com"], "empty allowlist must pass through: \(filtered)")
+}
+
+test("accounts: env allowlist (comma/space separated) wins over file") {
+    let env = ["CHECK_GCLOUD_ADC_ACCOUNTS": "a@example.com, b@example.com"]
+    let allow = Accounts.allowlist(environment: env, configText: "c@example.com\n")
+    assert(allow == ["a@example.com", "b@example.com"], "env must win: \(allow)")
+}
+
+test("accounts: file used when env unset (comments/blank lines ignored)") {
+    let text = """
+    # accounts to check
+    a@example.com
+
+    b@example.com  # inline comment
+    """
+    let allow = Accounts.allowlist(environment: [:], configText: text)
+    assert(allow == ["a@example.com", "b@example.com"], "unexpected file parse: \(allow)")
+}
+
+test("accounts: filter keeps only allowlisted accounts") {
+    let filtered = Accounts.filter(
+        ["keep@example.com", "drop@example.com"],
+        allowlist: ["keep@example.com"]
+    )
+    assert(filtered == ["keep@example.com"], "unexpected filter result: \(filtered)")
+}
+
+test("accounts: resolveAllowlist reads config file via XDG_CONFIG_HOME") {
+    let dir = NSTemporaryDirectory() + "check-gcloud-adc-test-\(getpid())"
+    let cfgDir = dir + "/check-gcloud-adc"
+    try? FileManager.default.createDirectory(atPath: cfgDir, withIntermediateDirectories: true)
+    let path = cfgDir + "/accounts"
+    try? "# comment\nkeep@example.com\n".write(toFile: path, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(atPath: dir) }
+
+    let allow = Accounts.resolveAllowlist(["XDG_CONFIG_HOME": dir])
+    assert(allow == ["keep@example.com"], "expected file to be read: \(allow)")
+    // env が有効ならファイルより env が優先される。
+    let allow2 = Accounts.resolveAllowlist([
+        "XDG_CONFIG_HOME": dir,
+        "CHECK_GCLOUD_ADC_ACCOUNTS": "env@example.com",
+    ])
+    assert(allow2 == ["env@example.com"], "env must win over file: \(allow2)")
+}
+
+test("accounts: default config path honors XDG_CONFIG_HOME then HOME") {
+    let xdg = Accounts.defaultConfigPath(["XDG_CONFIG_HOME": "/tmp/xdg"])
+    assert(xdg == "/tmp/xdg/check-gcloud-adc/accounts", "unexpected XDG path: \(xdg)")
+    let home = Accounts.defaultConfigPath(["HOME": "/Users/foo"])
+    assert(home == "/Users/foo/.config/check-gcloud-adc/accounts", "unexpected HOME path: \(home)")
+}
+
 test("reauth: ADC command sets scopes explicitly") {
     let cmd = GcloudReauth.command(account: nil, environment: [:])
     assert(
