@@ -8,13 +8,17 @@ public enum Scopes {
     public static let envKey = "CHECK_GCLOUD_ADC_SCOPES"
 
     /// 既定スコープ。`gcloud auth application-default login` の既定に
-    /// calendar.readonly / drive.readonly を足した superset。
+    /// calendar.readonly / drive.readonly / drive.file を足した superset。
+    /// - calendar.readonly / drive.readonly: meet-notes 等の議事録取得に必要。
+    /// - drive.file: ツールが作成した Google Sheets 等のファイルを作成・編集するため
+    ///   (アプリが作成したファイルのみに限定される最小権限。既存の任意ファイルは触れない)。
     public static let defaultScopes: [String] = [
         "openid",
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/cloud-platform",
         "https://www.googleapis.com/auth/calendar.readonly",
         "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/drive.file",
     ]
 
     /// 環境変数があればそれを、無ければ既定を返す。

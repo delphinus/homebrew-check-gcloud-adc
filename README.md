@@ -14,7 +14,7 @@ Google Cloud の Application Default Credentials (ADC) トークンの有効性�
 
 ### 必要スコープの設定
 
-既定では以下の superset を要求・付与する（`calendar.readonly` / `drive.readonly` は Google Meet の議事録取得などに必要）。
+既定では以下の superset を要求・付与する（`calendar.readonly` / `drive.readonly` は Google Meet の議事録取得などに必要。`drive.file` はツールが作成した Google Sheets 等のファイルを作成・編集するために必要で、アプリが作成したファイルのみに限定される最小権限）。
 
 ```
 openid
@@ -22,6 +22,7 @@ https://www.googleapis.com/auth/userinfo.email
 https://www.googleapis.com/auth/cloud-platform
 https://www.googleapis.com/auth/calendar.readonly
 https://www.googleapis.com/auth/drive.readonly
+https://www.googleapis.com/auth/drive.file
 ```
 
 環境変数 `CHECK_GCLOUD_ADC_SCOPES`（カンマまたは空白区切り）で上書きできる。`brew services` で使う場合はサービスの環境に設定する。
