@@ -35,6 +35,15 @@ gcloud へは `$BROWSER` と、`PATH` に差し込んだ `open` の 2 経路で�
 
 Safari を使わないのは、Safari 17+ のプロファイルを CLI や AppleScript から指定する手段が無く、「どのプロファイルで開くか」を固定できないため。`open -na Safari` も複数インスタンスにはならず、既存ウィンドウを前面化するだけになる。
 
+#### ウィンドウの大きさと位置
+
+既定では 600×800 の小窓を、**マウスのある画面**の中央に出す。認証だけの一時的なウィンドウなので、画面を占有せず、どこに出るかも毎回同じにするため。
+
+- 画面に収まらない場合は縁に 40 の余白を残して縮める。
+- 位置は Chrome の `--window-position`（主画面の左上を原点とし下向きが正）で渡す。macOS の `NSScreen`（主画面の左下を原点とし上向きが正）とは座標系が違うので変換している。副画面でも主画面の原点からの相対位置になる。
+
+`CHECK_GCLOUD_ADC_BROWSER_WINDOW` で `幅x高さ` を指定できる。空文字を設定すると大きさも位置も指定せず、Chrome がプロファイルに覚えている前回のウィンドウをそのまま使う。
+
 #### パスワードマネージャ（1Password）
 
 拡張機能は user-data-dir の中のプロファイル単位なので、専用プロファイルは素のままだと 1Password も入っていない。`invalid_rapt` による再認証は Google がパスワードや 2 要素をその都度要求してくるため、パスワードマネージャが使えないと毎回手打ちになり、ドメイン照合による phishing 耐性も TOTP の自動入力も失われる。専用ウィンドウにした結果セキュリティが下がっては本末転倒なので、次の 2 つを行う。
@@ -49,6 +58,7 @@ Safari を使わないのは、Safari 17+ のプロファイルを CLI や Apple
 | `CHECK_GCLOUD_ADC_BROWSER` | Google Chrome の実行ファイル | Chromium 系の別ブラウザ（Brave、Edge、Chrome Canary 等）の実行ファイルパス。**空文字を設定すると専用ウィンドウを使わず、既定ブラウザに任せる** |
 | `CHECK_GCLOUD_ADC_BROWSER_PROFILE` | `${XDG_CACHE_HOME:-~/.cache}/check-gcloud-adc/browser-profile` | プロファイルの置き場所 |
 | `CHECK_GCLOUD_ADC_BROWSER_EXTENSIONS` | 1Password（`aeblfdkhhhdcdjpifhhbdiojplfjncoa`） | 未導入ならインストールページを開く拡張機能の ID（カンマまたは空白区切り）。**空文字を設定すると何も開かない** |
+| `CHECK_GCLOUD_ADC_BROWSER_WINDOW` | `600x800` | ウィンドウの大きさ（`幅x高さ`）。マウスのある画面の中央に出す。**空文字を設定すると指定せず、Chrome が覚えている前回のウィンドウを使う** |
 
 Chrome が見つからない場合は自動的に既定ブラウザにフォールバックする。
 

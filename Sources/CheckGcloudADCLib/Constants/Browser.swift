@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// 再認証を「専用プロファイルの Chrome ウィンドウ」で行うための設定。
@@ -158,9 +159,11 @@ public enum Browser {
     public static func shimScript(
         executable: String,
         profile: String,
-        setupURLs: [String] = []
+        setupURLs: [String] = [],
+        windowArguments: [String] = []
     ) -> String {
         let extra = setupURLs.isEmpty ? "" : " " + setupURLs.map(quote).joined(separator: " ")
+        let window = windowArguments.map { "  \(quote($0)) \\\n" }.joined()
         return """
         #!/bin/sh
         # check-gcloud-adc が再認証中だけ gcloud に使わせるブラウザ。
@@ -177,7 +180,7 @@ public enum Browser {
           --no-default-browser-check \\
           --no-service-autorun \\
           --hide-crash-restore-bubble \\
-          --new-window "$url"\(extra) > /dev/null 2>&1 &
+        \(window)  --new-window "$url"\(extra) > /dev/null 2>&1 &
         [ -s "$(dirname "$0")/\(chromePIDFileName)" ] || echo $! > "$(dirname "$0")/\(chromePIDFileName)"
         exit 0
         """
@@ -185,6 +188,92 @@ public enum Browser {
 
     /// shim が起動した Chrome の PID を書き出すファイル名 (shim ディレクトリの中)。
     public static let chromePIDFileName = "chrome.pid"
+
+    // MARK: - ウィンドウの大きさと位置
+
+    /// ウィンドウの大きさ (`幅x高さ`)。空文字を設定すると指定せず、Chrome が
+    /// プロファイルに覚えている前回の位置・大きさをそのまま使う。
+    public static let windowEnvKey = "CHECK_GCLOUD_ADC_BROWSER_WINDOW"
+
+    /// 既定のウィンドウの大きさ。認証フローが縦に伸びても収まる程度の小窓。
+    public static let defaultWindowSize = CGSize(width: 600, height: 800)
+
+    /// 画面の縁に残す余白。ウィンドウがこれより大きくなるなら縮める。
+    public static let windowMargin: CGFloat = 40
+
+    /// `幅x高さ` をパースする。`600x800` / `600X800` / 空白ありを許す。
+    public static func parseWindowSize(_ raw: String) -> CGSize? {
+        let parts = raw.lowercased()
+            .split(separator: "x")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2,
+              let width = Double(parts[0]), let height = Double(parts[1]),
+              width > 0, height > 0
+        else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    /// 使うウィンドウの大きさを解決する。env が空文字なら nil (= 指定しない)。
+    public static func resolveWindowSize(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> CGSize? {
+        guard let raw = environment[windowEnvKey] else { return defaultWindowSize }
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return nil }
+        if let parsed = parseWindowSize(trimmed) { return parsed }
+        fputs("could not parse \(windowEnvKey)=\(raw), using the default size\n", stderr)
+        return defaultWindowSize
+    }
+
+    /// 画面の中央に置く位置を求める。
+    ///
+    /// Chrome の `--window-position` は「主画面の左上を原点とし、下向きが正」の
+    /// 座標系。macOS の `NSScreen` は「主画面の左下を原点とし、上向きが正」なので
+    /// 変換が要る。純粋な計算にしてあるのは、画面の無い環境でも試験できるようにするため。
+    ///
+    /// - Parameters:
+    ///   - visibleFrame: 対象画面の可視領域 (メニューバー・Dock を除いた範囲)。
+    ///   - primaryTopY: 主画面の上端の y 座標 (= `NSScreen.screens[0].frame.maxY`)。
+    public static func centeredPlacement(
+        size: CGSize,
+        visibleFrame: CGRect,
+        primaryTopY: CGFloat,
+        margin: CGFloat = windowMargin
+    ) -> (x: Int, y: Int, width: Int, height: Int) {
+        // 画面に収まらないなら縮める。極端に狭い画面でも潰れないよう下限を置く。
+        let width = min(size.width, max(320, visibleFrame.width - margin * 2))
+        let height = min(size.height, max(320, visibleFrame.height - margin * 2))
+        let x = visibleFrame.midX - width / 2
+        // 可視領域の中央に置いたときのウィンドウ上端 (macOS 座標系)。
+        let topInCocoa = visibleFrame.midY + height / 2
+        return (
+            x: Int(x.rounded()),
+            y: Int((primaryTopY - topInCocoa).rounded()),
+            width: Int(width.rounded()),
+            height: Int(height.rounded())
+        )
+    }
+
+    /// Chrome に渡すウィンドウ関連の引数。
+    public static func windowArguments(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment,
+        screen: (visibleFrame: CGRect, primaryTopY: CGFloat)? = currentScreen()
+    ) -> [String] {
+        guard let size = resolveWindowSize(environment) else { return [] }
+        guard let screen = screen else {
+            // 画面が分からない場合は大きさだけ。位置は Chrome に任せる。
+            return ["--window-size=\(Int(size.width)),\(Int(size.height))"]
+        }
+        let placement = centeredPlacement(
+            size: size,
+            visibleFrame: screen.visibleFrame,
+            primaryTopY: screen.primaryTopY
+        )
+        return [
+            "--window-size=\(placement.width),\(placement.height)",
+            "--window-position=\(placement.x),\(placement.y)",
+        ]
+    }
 
     /// 専用プロファイルから native messaging の manifest を引けるようにする。
     ///
@@ -331,8 +420,12 @@ public enum Browser {
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700]
             )
-            try shimScript(executable: executable, profile: profile, setupURLs: setup)
-                .write(toFile: opener, atomically: true, encoding: .utf8)
+            try shimScript(
+                executable: executable,
+                profile: profile,
+                setupURLs: setup,
+                windowArguments: windowArguments(environment)
+            ).write(toFile: opener, atomically: true, encoding: .utf8)
             try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: opener)
             // `open <url>` を直に叩く実装向けに PATH 上の open も差し替える。
             try fm.createSymbolicLink(
@@ -349,6 +442,17 @@ public enum Browser {
         linkNativeMessagingHosts(profile: profile, environment: environment)
 
         return Session(shimDir: shimDir, profile: profile, setupURLs: setup)
+    }
+
+    /// 今マウスがある画面の可視領域と、主画面の上端。取れなければ nil。
+    ///
+    /// マウスのある画面を使うのは、利用者が見ている画面に出したいため。
+    public static func currentScreen() -> (visibleFrame: CGRect, primaryTopY: CGFloat)? {
+        let screens = NSScreen.screens
+        guard let primary = screens.first else { return nil }
+        let mouse = NSEvent.mouseLocation
+        let target = screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? primary
+        return (target.visibleFrame, primary.frame.maxY)
     }
 
     /// shim ディレクトリ名の前置き。前回の再認証を見つける手掛かりに使う。
@@ -382,7 +486,22 @@ public enum Browser {
         // ラッパーが既に居ない孤児のウィンドウも掃除する。
         run("/usr/bin/pkill", ["-TERM", "-f", "--", "--user-data-dir=" + profile])
         waitUntilProfileIsFree(profile: profile)
+        removeStaleShims()
         return stale
+    }
+
+    /// 置き去りになった shim ディレクトリを消す。
+    ///
+    /// 後始末は EXIT トラップに載せてあるが、SIGKILL や電源断では走らない。
+    /// ここに来た時点で他のラッパーは全部落としてあり、今回の shim はまだ
+    /// 作っていないので、残っているものは全て残骸。
+    static func removeStaleShims() {
+        let fm = FileManager.default
+        let tmp = NSTemporaryDirectory()
+        guard let entries = try? fm.contentsOfDirectory(atPath: tmp) else { return }
+        for entry in entries where entry.hasPrefix(shimPrefix) {
+            try? fm.removeItem(atPath: (tmp as NSString).appendingPathComponent(entry))
+        }
     }
 
     /// `pgrep` の出力を PID の配列にする。

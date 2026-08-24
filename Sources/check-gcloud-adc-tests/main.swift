@@ -282,6 +282,60 @@ test("browser: wrap watches the window and stops gcloud when it is closed") {
     assert(wrapped.contains("kill -TERM -$$"), "must stop the whole group when the window is gone: \(wrapped)")
 }
 
+test("browser: window size parses WxH, empty env leaves it to Chrome") {
+    assert(Browser.resolveWindowSize([:]) == Browser.defaultWindowSize, "expected the default size")
+    assert(Browser.resolveWindowSize(["CHECK_GCLOUD_ADC_BROWSER_WINDOW": ""]) == nil, "empty env must not set a size")
+    assert(
+        Browser.resolveWindowSize(["CHECK_GCLOUD_ADC_BROWSER_WINDOW": " 480 X 640 "]) == CGSize(width: 480, height: 640),
+        "must accept spaces and an uppercase X"
+    )
+    // 壊れた値は既定に落とす (再認証そのものを失敗させない)。
+    assert(Browser.resolveWindowSize(["CHECK_GCLOUD_ADC_BROWSER_WINDOW": "nonsense"]) == Browser.defaultWindowSize, "must fall back")
+    assert(Browser.parseWindowSize("0x100") == nil, "zero is not a size")
+}
+
+test("browser: window is centered on the target screen") {
+    // 主画面 2560x1440、上 30 がメニューバー、下 96 が Dock。
+    let visible = CGRect(x: 0, y: 96, width: 2560, height: 1314)
+    let p = Browser.centeredPlacement(size: CGSize(width: 600, height: 800), visibleFrame: visible, primaryTopY: 1440)
+    assert(p.width == 600 && p.height == 800, "size must be kept: \(p)")
+    assert(p.x == 980, "must be centered horizontally: \(p.x)")
+    // 可視領域の中心 y は 753、ウィンドウ上端は 1153 (macOS 座標) → 上から 287。
+    assert(p.y == 287, "must be centered vertically in Chrome's top-down coordinates: \(p.y)")
+}
+
+test("browser: window on a secondary screen uses the primary screen's origin") {
+    // 主画面の右にある縦置きの画面。原点は主画面の左下のまま。
+    let visible = CGRect(x: 2560, y: -570, width: 1440, height: 2560)
+    let p = Browser.centeredPlacement(size: CGSize(width: 600, height: 800), visibleFrame: visible, primaryTopY: 1440)
+    assert(p.x == 2980, "must be centered on the secondary screen: \(p.x)")
+    // 上端は macOS 座標で 1110 → 主画面上端 1440 から 330 下。
+    assert(p.y == 330, "y must be relative to the primary screen top: \(p.y)")
+}
+
+test("browser: window shrinks to fit a small screen") {
+    let visible = CGRect(x: 0, y: 0, width: 800, height: 600)
+    let p = Browser.centeredPlacement(size: CGSize(width: 600, height: 800), visibleFrame: visible, primaryTopY: 600)
+    assert(p.width == 600, "600 fits in 800 - 2*40: \(p.width)")
+    assert(p.height == 520, "800 must shrink to 600 - 2*40: \(p.height)")
+    assert(p.x == 100 && p.y == 40, "must stay centered after shrinking: \(p)")
+}
+
+test("browser: window arguments reach the shim") {
+    let args = Browser.windowArguments(
+        [:],
+        screen: (visibleFrame: CGRect(x: 0, y: 96, width: 2560, height: 1314), primaryTopY: 1440)
+    )
+    assert(args == ["--window-size=600,800", "--window-position=980,287"], "unexpected args: \(args)")
+    let script = Browser.shimScript(executable: "/tmp/Chrome", profile: "/tmp/prof", windowArguments: args)
+    assert(script.contains("'--window-size=600,800'"), "size must reach the shim: \(script)")
+    assert(script.contains("'--window-position=980,287'"), "position must reach the shim: \(script)")
+    // 画面が分からない環境では大きさだけ渡し、位置は Chrome に任せる。
+    let sizeOnly = Browser.windowArguments([:], screen: nil)
+    assert(sizeOnly == ["--window-size=600,800"], "unexpected args without a screen: \(sizeOnly)")
+    assert(Browser.windowArguments(["CHECK_GCLOUD_ADC_BROWSER_WINDOW": ""], screen: nil).isEmpty, "empty env means no flags")
+}
+
 test("browser: parsePIDs reads pgrep output") {
     assert(Browser.parsePIDs("123\n456\n") == [123, 456], "unexpected parse")
     assert(Browser.parsePIDs("").isEmpty, "empty output means no pids")
@@ -308,6 +362,10 @@ test("browser: terminateStaleSessions kills the whole process group") {
         return
     }
 
+    // SIGKILL 等で置き去りになった shim ディレクトリも掃除される。
+    let orphan = NSTemporaryDirectory() + Browser.shimPrefix + "orphan-test"
+    try? FileManager.default.createDirectory(atPath: orphan, withIntermediateDirectories: true)
+
     let killed = Browser.terminateStaleSessions(
         profile: "/tmp/check-gcloud-adc-no-such-profile",
         pattern: pattern
@@ -316,6 +374,7 @@ test("browser: terminateStaleSessions kills the whole process group") {
     Thread.sleep(forTimeInterval: 1)
     assert(kill(child, 0) != 0, "the child must be killed along with its group")
     assert(!parent.isRunning, "the wrapper must be killed")
+    assert(!FileManager.default.fileExists(atPath: orphan), "orphaned shim dirs must be removed")
 }
 
 test("browser: wrapped command preserves the exit code and cleans up") {
