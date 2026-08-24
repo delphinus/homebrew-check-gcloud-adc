@@ -331,6 +331,30 @@ test("browser: makeSession links native messaging hosts into the profile") {
     assert(session.setupURLs.count == 1, "expected the 1Password store page: \(session.setupURLs)")
 }
 
+test("browser: native messaging links coexist with the directory Chrome creates") {
+    let dir = NSTemporaryDirectory() + "check-gcloud-adc-nmh2-test-\(getpid())"
+    let fm = FileManager.default
+    let fakeHome = dir + "/home"
+    let source = fakeHome + "/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+    let profile = dir + "/profile"
+    try? fm.createDirectory(atPath: source, withIntermediateDirectories: true)
+    try? "{}".write(toFile: source + "/com.1password.1password.json", atomically: true, encoding: .utf8)
+    try? "{}".write(toFile: source + "/com.other.host.json", atomically: true, encoding: .utf8)
+    // Chrome は起動時にこのディレクトリを自分で作る。既に在っても張れること。
+    try? fm.createDirectory(atPath: profile + "/NativeMessagingHosts", withIntermediateDirectories: true)
+    defer { try? fm.removeItem(atPath: dir) }
+
+    let first = Browser.linkNativeMessagingHosts(profile: profile, environment: ["HOME": fakeHome])
+    assert(first == 2, "expected 2 links, got \(first)")
+    assert(
+        fm.fileExists(atPath: profile + "/NativeMessagingHosts/com.1password.1password.json"),
+        "1Password manifest must be linked even though the directory already existed"
+    )
+    // 2 回目は何も足さない (冪等)。
+    let second = Browser.linkNativeMessagingHosts(profile: profile, environment: ["HOME": fakeHome])
+    assert(second == 0, "expected no new links on the second run, got \(second)")
+}
+
 test("browser: makeSession returns nil when disabled") {
     assert(Browser.makeSession(["CHECK_GCLOUD_ADC_BROWSER": ""]) == nil, "empty env must disable the shim")
 }

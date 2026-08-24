@@ -29,7 +29,7 @@ Safari を使わないのは、Safari 17+ のプロファイルを CLI や Apple
 拡張機能は user-data-dir の中のプロファイル単位なので、専用プロファイルは素のままだと 1Password も入っていない。`invalid_rapt` による再認証は Google がパスワードや 2 要素をその都度要求してくるため、パスワードマネージャが使えないと毎回手打ちになり、ドメイン照合による phishing 耐性も TOTP の自動入力も失われる。専用ウィンドウにした結果セキュリティが下がっては本末転倒なので、次の 2 つを行う。
 
 - **未導入の拡張機能があれば、そのインストールページを認証 URL と同じウィンドウの別タブで開く。** 既定は 1Password。認証タブは常に 1 番目のタブに開く。
-- **native messaging の manifest を専用プロファイルから引けるようにする。** 1Password 拡張はデスクトップアプリと native messaging で話すが、その manifest は既定の Chrome の場所（`~/Library/Application Support/Google/Chrome/NativeMessagingHosts`）にしか置かれない。専用プロファイル配下に symlink を張って、Chrome がどちらのパスを見る実装でも届くようにする。
+- **native messaging の manifest を専用プロファイルから引けるようにする。** 1Password 拡張はデスクトップアプリと native messaging で話すが、その manifest は既定の Chrome の場所（`~/Library/Application Support/Google/Chrome/NativeMessagingHosts`）にしか置かれない。Chrome は `--user-data-dir` 直下の `NativeMessagingHosts` を見るので、そこへ manifest 単位で symlink を張る（ディレクトリごとではなく個別ファイルにしているのは、Chrome が起動時にこのディレクトリを自分で作ってしまうため）。
 
 初回に一度だけ、開いたストアページから拡張機能を入れてデスクトップアプリとの連携を承認すれば、プロファイルが永続なので以後ずっと効く。Google へのログインも同様に初回だけ。導入が済めばストアページは開かなくなる（「新規プロファイルか」ではなく「実際に入っているか」で判断するため、既に作ってしまった素のプロファイルも次の再認証で拾える）。
 

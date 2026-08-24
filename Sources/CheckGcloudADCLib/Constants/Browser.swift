@@ -177,31 +177,43 @@ public enum Browser {
     ///
     /// 1Password 拡張はデスクトップアプリと native messaging で話すが、その manifest
     /// (`com.1password.1password.json`) は既定の Chrome の場所にしか置かれていない。
-    /// Chrome が manifest をどちらのパスで探すかは版によって差があるため、
-    /// user-data-dir 相対の場所に symlink を張って取りこぼさないようにする。
+    /// Chrome は `--user-data-dir` 直下の `NativeMessagingHosts` を見る (実際に空の
+    /// ディレクトリを自分で作る) ので、そこへ manifest 単位で symlink を張る。
+    ///
+    /// ディレクトリごと symlink にしないのは、Chrome が先にディレクトリを作って
+    /// しまうため。個別ファイルなら Chrome が作ったディレクトリと共存できる。
+    ///
+    /// - Returns: 新しく張った symlink の数。
     @discardableResult
-    static func linkNativeMessagingHosts(
+    public static func linkNativeMessagingHosts(
         profile: String,
         environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> Bool {
+    ) -> Int {
         let fm = FileManager.default
         let home = environment["HOME"] ?? NSHomeDirectory()
         let source = (home as NSString)
             .appendingPathComponent("Library/Application Support/Google/Chrome/\(nativeMessagingHostsDirName)")
         let destination = (profile as NSString).appendingPathComponent(nativeMessagingHostsDirName)
 
-        var isDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: source, isDirectory: &isDirectory), isDirectory.boolValue else { return false }
-        // 既に何か置かれているなら触らない (利用者が自分で用意した場合を壊さない)。
-        guard !fm.fileExists(atPath: destination) else { return false }
+        guard let manifests = try? fm.contentsOfDirectory(atPath: source) else { return 0 }
 
+        var linked = 0
         do {
-            try fm.createSymbolicLink(atPath: destination, withDestinationPath: source)
-            return true
+            try fm.createDirectory(atPath: destination, withIntermediateDirectories: true)
+            for manifest in manifests where manifest.hasSuffix(".json") {
+                let target = (destination as NSString).appendingPathComponent(manifest)
+                // 既に何か置かれているなら触らない (利用者が用意したものを壊さない)。
+                guard !fm.fileExists(atPath: target) else { continue }
+                try fm.createSymbolicLink(
+                    atPath: target,
+                    withDestinationPath: (source as NSString).appendingPathComponent(manifest)
+                )
+                linked += 1
+            }
         } catch {
             fputs("could not link native messaging hosts: \(error.localizedDescription)\n", stderr)
-            return false
         }
+        return linked
     }
 
     /// gcloud のコマンドを shim 込みに包む。
