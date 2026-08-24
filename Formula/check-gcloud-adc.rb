@@ -1,9 +1,9 @@
 class CheckGcloudAdc < Formula
   desc "Check Google Cloud ADC token validity and notify when expired"
   homepage "https://github.com/delphinus/homebrew-check-gcloud-adc"
-  url "https://github.com/delphinus/homebrew-check-gcloud-adc/releases/download/v2.9.0/check-gcloud-adc.tar.gz"
-  sha256 "921feeb285562d49e4b33181fb0dfaf36ab98597845220040b9c13d71d69ca25"
-  version "2.9.0"
+  url "https://github.com/delphinus/homebrew-check-gcloud-adc/releases/download/v2.10.0/check-gcloud-adc.tar.gz"
+  sha256 "add341498c27ca5da8dbb244573d80b5dbf23588587f6e6ca560a7a3685c2d61"
+  version "2.10.0"
 
   depends_on :macos
 
