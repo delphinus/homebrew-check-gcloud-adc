@@ -146,6 +146,15 @@ public enum Browser {
     /// - Parameter setupURLs: 認証 URL と一緒に開くセットアップ用のページ。同じ
     ///   ウィンドウの別タブとして開く。認証 URL を先に置いてあるので、どちらが
     ///   手前になっても認証タブは必ず 1 番目のタブにいる。
+    ///
+    /// 起動した Chrome の PID を `chrome.pid` に残す。ラッパー側はこれを見て
+    /// 「ウィンドウが閉じられたか」を判定し、終了時にはこの PID だけを落とす。
+    /// コマンドラインのパターン照合を使わないのは、ラッパーの argv 自体に
+    /// `--user-data-dir=...` が含まれてしまい、`pkill -f` が自分を撃つため。
+    ///
+    /// gcloud が 2 度目の URL を開いた場合、その起動プロセスは走っている
+    /// インスタンスへ取り次いですぐ終わる。PID を上書きすると「閉じられた」と
+    /// 誤判定するので、既に記録があれば書かない。
     public static func shimScript(
         executable: String,
         profile: String,
@@ -169,9 +178,13 @@ public enum Browser {
           --no-service-autorun \\
           --hide-crash-restore-bubble \\
           --new-window "$url"\(extra) > /dev/null 2>&1 &
+        [ -s "$(dirname "$0")/\(chromePIDFileName)" ] || echo $! > "$(dirname "$0")/\(chromePIDFileName)"
         exit 0
         """
     }
+
+    /// shim が起動した Chrome の PID を書き出すファイル名 (shim ディレクトリの中)。
+    public static let chromePIDFileName = "chrome.pid"
 
     /// 専用プロファイルから native messaging の manifest を引けるようにする。
     ///
@@ -222,29 +235,74 @@ public enum Browser {
     /// ではなくコマンド文字列側に置く。そうしないと rc の `path=(...)` に
     /// PATH を作り直されて shim が消えることがある。
     ///
-    /// 後始末は EXIT トラップに載せる。gcloud が途中で落ちても、こちらが
-    /// 終了させられても専用ウィンドウが残らない。zsh の EXIT トラップは終了
-    /// ステータスを書き換えないので、gcloud の終了コードはそのまま返る。
+    /// 併せて 2 つの後始末を仕込む。
+    ///
+    /// - **EXIT トラップ**: gcloud が終わったら (途中で落ちても、こちらが終了させ
+    ///   られても) 専用ウィンドウと shim を片付ける。zsh の EXIT トラップは終了
+    ///   ステータスを書き換えないので、gcloud の終了コードはそのまま返る。
+    /// - **見張り**: 専用ウィンドウを利用者が閉じた (= Chrome が終了した) 場合、
+    ///   gcloud はコールバックを待ち続けて永久に終わらない。Chrome の PID を
+    ///   `kill -0` で監視し、消えたら gcloud を終わらせる。
+    ///
+    /// PID で扱うのが要点。`pkill -f '--user-data-dir=...'` のようなコマンドライン
+    /// のパターン照合は、ラッパー自身の argv にもその文字列が含まれるため自分を
+    /// 撃ってしまう。前回の残骸の掃除は、argv にパターンを持たない Swift 側
+    /// (`terminateStaleSessions`) で行う。
     public static func wrap(command: String, session: Session) -> String {
         let shim = quote(session.shimDir)
         let opener = quote((session.shimDir as NSString).appendingPathComponent("open-url"))
-        let pattern = quote("--user-data-dir=" + session.profile)
-        let cleanup = [
-            "sleep \(closeGraceSeconds)",
-            "/usr/bin/pkill -TERM -f -- \(pattern) > /dev/null 2>&1",
-            "/bin/rm -rf \(shim)",
-        ].joined(separator: "; ")
-        return [
-            "export BROWSER=\(opener)",
-            "export PATH=\(shim):\"$PATH\"",
-            "\(cleanupFunction)() { \(cleanup); }",
-            "trap \(cleanupFunction) EXIT INT TERM",
-            command,
-        ].joined(separator: "; ")
+        let pidFile = quote((session.shimDir as NSString).appendingPathComponent(chromePIDFileName))
+        return """
+        export BROWSER=\(opener)
+        export PATH=\(shim):"$PATH"
+
+        __ccga_pid_file=\(pidFile)
+
+        # 専用ウィンドウが閉じられたら gcloud を待たせ続けない。
+        __ccga_watch() {
+          __ccga_n=0
+          while [ $__ccga_n -lt \(browserAppearTimeoutSeconds) ]; do
+            [ -s "$__ccga_pid_file" ] && break
+            __ccga_n=$((__ccga_n + 1))
+            sleep 1
+          done
+          # ブラウザが出てこなかった (shim が使われなかった) なら何もしない。
+          [ -s "$__ccga_pid_file" ] || return 0
+          read __ccga_chrome < "$__ccga_pid_file"
+          while kill -0 "$__ccga_chrome" 2> /dev/null; do sleep 2; done
+          # プロセスグループごと落とす。gcloud だけを落とすと、このシェルが後続の
+          # コマンド (`a && b` の b 等) へ進んでしまう。自分がグループのリーダー
+          # でなければ $$ と同じ pgid は存在しないので、他所を撃つ心配は無い。
+          kill -TERM -$$ 2> /dev/null || /usr/bin/pkill -TERM -P $$ > /dev/null 2>&1
+        }
+
+        __ccga_done=0
+        __ccga_cleanup() {
+          [ "$__ccga_done" = 0 ] || return 0
+          __ccga_done=1
+          kill "$__ccga_watcher" 2> /dev/null
+          sleep \(closeGraceSeconds)
+          if [ -s "$__ccga_pid_file" ]; then
+            read __ccga_chrome < "$__ccga_pid_file"
+            kill -TERM "$__ccga_chrome" 2> /dev/null
+          fi
+          /bin/rm -rf \(shim)
+        }
+
+        __ccga_watch &
+        __ccga_watcher=$!
+        # zsh はシグナルのトラップを実行したあと処理を続行するので、明示的に
+        # 抜ける。そうしないと TERM を受けても gcloud を待ち続けてしまう。
+        trap __ccga_cleanup EXIT
+        trap '__ccga_cleanup; exit 143' TERM
+        trap '__ccga_cleanup; exit 130' INT
+
+        \(command)
+        """
     }
 
-    /// 後始末用シェル関数の名前。ユーザの rc と衝突しないように前置きを付ける。
-    static let cleanupFunction = "__check_gcloud_adc_close_browser"
+    /// 見張りが「ブラウザが出てこなかった」と諦めるまでの秒数。
+    public static let browserAppearTimeoutSeconds = 60
 
     /// shim を一時ディレクトリに書き出す。無効化されている・Chrome が無い・
     /// 書き出しに失敗した場合は nil を返し、呼び出し側は従来どおり既定ブラウザに任せる。
@@ -263,7 +321,7 @@ public enum Browser {
             isExtensionInstalled(profile: profile, identifier: $0)
         }
         let shimDir = (NSTemporaryDirectory() as NSString)
-            .appendingPathComponent("check-gcloud-adc-browser-\(UUID().uuidString)")
+            .appendingPathComponent(shimPrefix + UUID().uuidString)
         let opener = (shimDir as NSString).appendingPathComponent("open-url")
 
         do {
@@ -291,6 +349,84 @@ public enum Browser {
         linkNativeMessagingHosts(profile: profile, environment: environment)
 
         return Session(shimDir: shimDir, profile: profile, setupURLs: setup)
+    }
+
+    /// shim ディレクトリ名の前置き。前回の再認証を見つける手掛かりに使う。
+    public static let shimPrefix = "check-gcloud-adc-browser-"
+
+    /// 前回の再認証が残っていれば落として、毎回まっさらな状態から始める。
+    ///
+    /// 利用者が専用ウィンドウを閉じただけだと、`gcloud` はローカルのコールバックを
+    /// 待ち続けて終わらず、それを待つラッパーの `zsh` も残る。放っておくと
+    /// `open check-gcloud-adc://reauth` のたびに溜まっていくので、始める前に掃除する。
+    ///
+    /// ラッパーの `zsh` はプロセスグループのリーダーで、`gcloud` は同じグループに
+    /// いる。`zsh` だけを落とすと `gcloud` が孤児になって待ち続けるので、
+    /// **グループごと**落とす。
+    ///
+    /// この処理を Swift 側に置いているのは、`pgrep`/`pkill` に渡すパターンが
+    /// 自分自身の argv に含まれないようにするため。同じことをラッパーの中でやると
+    /// `pkill -f` が自分を撃つ。
+    ///
+    /// - Parameter pattern: 前回のラッパーを探す `pgrep -f` のパターン。既定は
+    ///   shim ディレクトリの前置き。テストが無関係なプロセスを巻き込まないよう
+    ///   差し替えられるようにしてある。
+    /// - Returns: 落とした前回のラッパーの PID。
+    @discardableResult
+    public static func terminateStaleSessions(profile: String, pattern: String = shimPrefix) -> [pid_t] {
+        let stale = parsePIDs(capture("/usr/bin/pgrep", ["-f", pattern]))
+        for pid in stale {
+            // まずプロセスグループごと。リーダーでなければ単体で。
+            if kill(-pid, SIGTERM) != 0 { kill(pid, SIGTERM) }
+        }
+        // ラッパーが既に居ない孤児のウィンドウも掃除する。
+        run("/usr/bin/pkill", ["-TERM", "-f", "--", "--user-data-dir=" + profile])
+        waitUntilProfileIsFree(profile: profile)
+        return stale
+    }
+
+    /// `pgrep` の出力を PID の配列にする。
+    public static func parsePIDs(_ output: String) -> [pid_t] {
+        output
+            .split(whereSeparator: { $0 == "\n" || $0 == " " })
+            .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+            .filter { $0 > 0 }
+    }
+
+    /// 落とした Chrome が消えるまで少し待つ。まだ生きているうちに次を起動すると、
+    /// 新しいプロセスにならず古いインスタンスへ取り次がれてしまう。
+    static func waitUntilProfileIsFree(profile: String, timeoutSeconds: Double = 5) {
+        let deadline = Date(timeIntervalSinceNow: timeoutSeconds)
+        while Date() < deadline {
+            if parsePIDs(capture("/usr/bin/pgrep", ["-f", "--", "--user-data-dir=" + profile])).isEmpty { return }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        fputs("dedicated browser did not exit in time; the new window may reuse it\n", stderr)
+    }
+
+    /// 標準出力を受け取って外部コマンドを実行する。
+    static func capture(_ launchPath: String, _ arguments: [String]) -> String {
+        let task = Process()
+        task.launchPath = launchPath
+        task.arguments = arguments
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return "" }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// 出力を捨てて外部コマンドを実行する。
+    static func run(_ launchPath: String, _ arguments: [String]) {
+        let task = Process()
+        task.launchPath = launchPath
+        task.arguments = arguments
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return }
+        task.waitUntilExit()
     }
 
     /// sh の単一引用符で囲む。

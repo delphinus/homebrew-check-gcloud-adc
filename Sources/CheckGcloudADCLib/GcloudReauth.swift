@@ -26,9 +26,15 @@ public enum GcloudReauth {
     /// 認証させたうえで、gcloud の終了後にそのウィンドウを閉じる。後始末はコマンド
     /// 文字列の側に埋めてあるので、呼び出し側は Process の終了を待つだけでよい
     /// (`NotificationSystem.waitForReauth`)。
+    ///
+    /// 始める前に前回の再認証を落とすので、`open check-gcloud-adc://reauth` は
+    /// 何度叩いても毎回まっさらなプロセスから始まる。
     static func run(account: String? = nil) -> Process? {
         let environment = ProcessInfo.processInfo.environment
         var script = command(account: account, environment: environment)
+        if Browser.resolveExecutable(environment) != nil {
+            Browser.terminateStaleSessions(profile: Browser.resolveProfile(environment))
+        }
         if let session = Browser.makeSession(environment) {
             script = Browser.wrap(command: script, session: session)
         }

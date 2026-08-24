@@ -256,11 +256,66 @@ test("browser: wrap exports the shim and closes the window afterwards") {
     let wrapped = Browser.wrap(command: "gcloud auth login", session: session)
     assert(wrapped.contains("export BROWSER='/tmp/shim/open-url'"), "must set $BROWSER: \(wrapped)")
     assert(wrapped.contains("export PATH='/tmp/shim':\"$PATH\""), "must prepend the shim to PATH: \(wrapped)")
-    assert(wrapped.hasSuffix("; gcloud auth login"), "must end with the original command: \(wrapped)")
-    assert(wrapped.contains("pkill -TERM -f -- '--user-data-dir=/tmp/prof'"), "must close the dedicated window: \(wrapped)")
+    assert(wrapped.hasSuffix("\ngcloud auth login"), "must end with the original command: \(wrapped)")
     assert(wrapped.contains("/bin/rm -rf '/tmp/shim'"), "must clean up the shim: \(wrapped)")
     // gcloud が落ちても専用ウィンドウが残らないよう EXIT トラップに載せる。
-    assert(wrapped.contains("EXIT INT TERM"), "cleanup must run on EXIT/INT/TERM: \(wrapped)")
+    assert(wrapped.contains("trap __ccga_cleanup EXIT"), "cleanup must run on EXIT: \(wrapped)")
+    // zsh はトラップの後も処理を続行するので、シグナル側は明示的に抜けること。
+    assert(wrapped.contains("exit 143") && wrapped.contains("exit 130"), "signal traps must exit: \(wrapped)")
+    // 自分の argv を撃たないよう、コマンドラインのパターン照合は使わない。
+    assert(!wrapped.contains("pkill -TERM -f"), "must not pattern-match command lines: \(wrapped)")
+    assert(wrapped.contains("/tmp/shim/chrome.pid"), "must track Chrome by pid: \(wrapped)")
+}
+
+test("browser: shim records the Chrome pid without overwriting it") {
+    let script = Browser.shimScript(executable: "/tmp/Chrome", profile: "/tmp/prof")
+    assert(script.contains("chrome.pid"), "shim must record the Chrome pid: \(script)")
+    // 2 度目の起動は走っているインスタンスに取り次いですぐ終わる。上書きさせない。
+    assert(script.contains("[ -s \"$(dirname \"$0\")/chrome.pid\" ] ||"), "must not overwrite the pid: \(script)")
+}
+
+test("browser: wrap watches the window and stops gcloud when it is closed") {
+    let session = Browser.Session(shimDir: "/tmp/shim", profile: "/tmp/prof")
+    let wrapped = Browser.wrap(command: "gcloud auth login", session: session)
+    assert(wrapped.contains("kill -0 \"$__ccga_chrome\""), "must watch the Chrome pid: \(wrapped)")
+    // gcloud だけでなくプロセスグループごと。後続のコマンドへ進ませない。
+    assert(wrapped.contains("kill -TERM -$$"), "must stop the whole group when the window is gone: \(wrapped)")
+}
+
+test("browser: parsePIDs reads pgrep output") {
+    assert(Browser.parsePIDs("123\n456\n") == [123, 456], "unexpected parse")
+    assert(Browser.parsePIDs("").isEmpty, "empty output means no pids")
+    assert(Browser.parsePIDs("nonsense\n789").map(Int.init) == [789], "must skip garbage")
+}
+
+test("browser: terminateStaleSessions kills the whole process group") {
+    // ラッパーを模したプロセスグループ (親 + 子) を作り、親だけを見つけて
+    // グループごと落とせることを確かめる。子が孤児にならないのが要点。
+    let pattern = "check-gcloud-adc-group-kill-test-\(getpid())"
+    let marker = NSTemporaryDirectory() + pattern
+    let script = "sleep 120 & echo $! > \(marker).child; sleep 120"
+    let parent = Process()
+    parent.launchPath = "/bin/sh"
+    parent.arguments = ["-c", script]
+    try? parent.run()
+    Thread.sleep(forTimeInterval: 1)
+
+    let child = (try? String(contentsOfFile: marker + ".child", encoding: .utf8))
+        .flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    defer { try? FileManager.default.removeItem(atPath: marker + ".child") }
+    guard let child = child else {
+        assert(false, "could not read the child pid")
+        return
+    }
+
+    let killed = Browser.terminateStaleSessions(
+        profile: "/tmp/check-gcloud-adc-no-such-profile",
+        pattern: pattern
+    )
+    assert(killed.contains(parent.processIdentifier), "expected the wrapper pid, got \(killed)")
+    Thread.sleep(forTimeInterval: 1)
+    assert(kill(child, 0) != 0, "the child must be killed along with its group")
+    assert(!parent.isRunning, "the wrapper must be killed")
 }
 
 test("browser: wrapped command preserves the exit code and cleans up") {
