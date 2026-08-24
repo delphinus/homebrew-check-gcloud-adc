@@ -20,10 +20,21 @@ public enum GcloudReauth {
         return "gcloud auth login '\(escaped)' && \(adcLogin)"
     }
 
+    /// 再認証を実行する。
+    ///
+    /// 可能なら `Browser` の shim を噛ませ、専用プロファイルの Chrome ウィンドウで
+    /// 認証させたうえで、gcloud の終了後にそのウィンドウを閉じる。後始末はコマンド
+    /// 文字列の側に埋めてあるので、呼び出し側は Process の終了を待つだけでよい
+    /// (`NotificationSystem.waitForReauth`)。
     static func run(account: String? = nil) -> Process? {
+        let environment = ProcessInfo.processInfo.environment
+        var script = command(account: account, environment: environment)
+        if let session = Browser.makeSession(environment) {
+            script = Browser.wrap(command: script, session: session)
+        }
         let task = Process()
         task.launchPath = "/bin/zsh"
-        task.arguments = ["-l", "-c", command(account: account)]
+        task.arguments = ["-l", "-c", script]
         try? task.run()
         return task
     }

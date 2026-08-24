@@ -224,6 +224,96 @@ test("reauth: account name with single quote is escaped") {
     assert(cmd.hasPrefix("gcloud auth login 'a'\\''b@example.com' && "), "unexpected escaping: \(cmd)")
 }
 
+test("browser: default executable is Google Chrome, empty env disables it") {
+    assert(Browser.resolveExecutable([:]) == Browser.defaultExecutable, "expected the default Chrome path")
+    assert(Browser.resolveExecutable(["CHECK_GCLOUD_ADC_BROWSER": "/tmp/brave"]) == "/tmp/brave", "env must win")
+    assert(Browser.resolveExecutable(["CHECK_GCLOUD_ADC_BROWSER": "  "]) == nil, "empty env must disable the shim")
+}
+
+test("browser: profile path honors env, then XDG_CACHE_HOME, then HOME") {
+    let explicit = Browser.resolveProfile(["CHECK_GCLOUD_ADC_BROWSER_PROFILE": "/tmp/p"])
+    assert(explicit == "/tmp/p", "unexpected explicit profile: \(explicit)")
+    let xdg = Browser.resolveProfile(["XDG_CACHE_HOME": "/tmp/xdg"])
+    assert(xdg == "/tmp/xdg/check-gcloud-adc/browser-profile", "unexpected XDG profile: \(xdg)")
+    let home = Browser.resolveProfile(["HOME": "/Users/foo"])
+    assert(home == "/Users/foo/.cache/check-gcloud-adc/browser-profile", "unexpected HOME profile: \(home)")
+}
+
+test("browser: shim pins the profile and always opens a new window") {
+    let script = Browser.shimScript(executable: "/tmp/Chrome", profile: "/tmp/prof")
+    assert(script.contains("--user-data-dir='/tmp/prof'"), "shim must pin --user-data-dir: \(script)")
+    assert(script.contains("--new-window"), "shim must not reuse an existing window")
+    assert(script.contains("exec /usr/bin/open"), "non-URL invocations must fall back to open")
+}
+
+test("browser: shim escapes single quotes in paths") {
+    let script = Browser.shimScript(executable: "/tmp/a'b/Chrome", profile: "/tmp/prof")
+    assert(script.contains("'/tmp/a'\\''b/Chrome'"), "unexpected escaping: \(script)")
+}
+
+test("browser: wrap exports the shim and closes the window afterwards") {
+    let session = Browser.Session(shimDir: "/tmp/shim", profile: "/tmp/prof")
+    let wrapped = Browser.wrap(command: "gcloud auth login", session: session)
+    assert(wrapped.contains("export BROWSER='/tmp/shim/open-url'"), "must set $BROWSER: \(wrapped)")
+    assert(wrapped.contains("export PATH='/tmp/shim':\"$PATH\""), "must prepend the shim to PATH: \(wrapped)")
+    assert(wrapped.hasSuffix("; gcloud auth login"), "must end with the original command: \(wrapped)")
+    assert(wrapped.contains("pkill -TERM -f -- '--user-data-dir=/tmp/prof'"), "must close the dedicated window: \(wrapped)")
+    assert(wrapped.contains("/bin/rm -rf '/tmp/shim'"), "must clean up the shim: \(wrapped)")
+    // gcloud が落ちても専用ウィンドウが残らないよう EXIT トラップに載せる。
+    assert(wrapped.contains("EXIT INT TERM"), "cleanup must run on EXIT/INT/TERM: \(wrapped)")
+}
+
+test("browser: wrapped command preserves the exit code and cleans up") {
+    let session = Browser.Session(shimDir: "/tmp/check-gcloud-adc-wrap-test", profile: "/tmp/check-gcloud-adc-wrap-prof")
+    try? FileManager.default.createDirectory(atPath: session.shimDir, withIntermediateDirectories: true)
+    let wrapped = Browser.wrap(command: "/bin/sh -c 'exit 7'", session: session)
+
+    let task = Process()
+    task.launchPath = "/bin/zsh"
+    task.arguments = ["-l", "-c", wrapped]
+    try? task.run()
+    task.waitUntilExit()
+
+    assert(task.terminationStatus == 7, "expected exit 7, got \(task.terminationStatus)")
+    assert(!FileManager.default.fileExists(atPath: session.shimDir), "shim dir must be removed")
+}
+
+test("browser: makeSession returns nil when disabled") {
+    assert(Browser.makeSession(["CHECK_GCLOUD_ADC_BROWSER": ""]) == nil, "empty env must disable the shim")
+}
+
+test("browser: makeSession writes an executable shim and an open symlink") {
+    let dir = NSTemporaryDirectory() + "check-gcloud-adc-browser-test-\(getpid())"
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: dir) }
+
+    // 実行可能ファイルとして通るものなら何でもよい (Chrome がない環境でも回るように)。
+    guard let session = Browser.makeSession([
+        "CHECK_GCLOUD_ADC_BROWSER": "/bin/echo",
+        "CHECK_GCLOUD_ADC_BROWSER_PROFILE": dir + "/profile",
+    ]) else {
+        assert(false, "expected a session")
+        return
+    }
+    defer { try? FileManager.default.removeItem(atPath: session.shimDir) }
+
+    let fm = FileManager.default
+    assert(session.profile == dir + "/profile", "unexpected profile: \(session.profile)")
+    assert(fm.fileExists(atPath: session.profile), "profile directory must be created")
+    assert(fm.isExecutableFile(atPath: session.shimDir + "/open-url"), "shim must be executable")
+    assert(fm.isExecutableFile(atPath: session.shimDir + "/open"), "open shim must be executable")
+
+    // shim を実際に叩いて、URL が渡ることと即座に終わることを確かめる。
+    let task = Process()
+    task.launchPath = session.shimDir + "/open-url"
+    task.arguments = ["https://example.com/"]
+    let pipe = Pipe()
+    task.standardOutput = pipe
+    try? task.run()
+    task.waitUntilExit()
+    assert(task.terminationStatus == 0, "shim must exit 0, got \(task.terminationStatus)")
+}
+
 test("test: sends test notification") {
     let (app, n, _, _) = makeTestApp()
 

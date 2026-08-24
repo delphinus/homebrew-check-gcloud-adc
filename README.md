@@ -7,10 +7,29 @@ Google Cloud の Application Default Credentials (ADC) トークンの有効性�
 - `gcloud auth application-default print-access-token` でトークンの有効性を確認
 - さらに `tokeninfo` でスコープを検査し、必要スコープ (既定は `calendar.readonly` / `drive.readonly` を含む superset) が欠けていれば無効として扱う
 - 無効・スコープ不足の場合、macOS のネイティブ通知を送信（1 回のみ、再認証まで重複しない）
-- 通知クリックで再認証を実行（ブラウザが開いて認証）
+- 通知クリックで再認証を実行（専用の Chrome ウィンドウが開いて認証）
   - ADC: `gcloud auth application-default login --scopes=<必要スコープ>` — 必要スコープを常に付与するため、他の `gcloud auth application-default login`（スコープ無し）に上書きされても復旧できる
   - 名前付きアカウント: `gcloud auth login --update-adc <account>`
 - `brew services` により 5 分間隔で自動実行
+
+### 再認証に使うブラウザ
+
+再認証は**専用プロファイルの Chrome ウィンドウ**で行う。既定ブラウザに任せると「最後に使ったウィンドウ / プロファイル」に認証タブが生えるため、どのプロファイルで認証したかがブレるうえ、終わってもタブが残るのを避けるため。
+
+- `--user-data-dir` を固定パス（既定 `${XDG_CACHE_HOME:-~/.cache}/check-gcloud-adc/browser-profile`）にした Chrome インスタンスで開く。普段使いの Chrome とは別プロセス・別プロファイルなので、既存ウィンドウを再利用しない。
+- プロファイルのディレクトリは残るので、Google のログインセッションは次回の再認証に引き継がれる。作り直したいときはディレクトリごと削除する。
+- gcloud が終わったら、その `--user-data-dir` を持つプロセスだけを終了させる。gcloud が途中で落ちた場合もウィンドウは残らない。
+
+gcloud へは `$BROWSER` と、`PATH` に差し込んだ `open` の 2 経路で渡している。前者は gcloud が使う Python の `webbrowser` モジュールが、後者は `open <url>` を直に叩く実装が拾う。
+
+Safari を使わないのは、Safari 17+ のプロファイルを CLI や AppleScript から指定する手段が無く、「どのプロファイルで開くか」を固定できないため。`open -na Safari` も複数インスタンスにはならず、既存ウィンドウを前面化するだけになる。
+
+| 環境変数 | 既定 | 用途 |
+|---|---|---|
+| `CHECK_GCLOUD_ADC_BROWSER` | Google Chrome の実行ファイル | Chromium 系の別ブラウザ（Brave、Edge、Chrome Canary 等）の実行ファイルパス。**空文字を設定すると専用ウィンドウを使わず、既定ブラウザに任せる** |
+| `CHECK_GCLOUD_ADC_BROWSER_PROFILE` | `${XDG_CACHE_HOME:-~/.cache}/check-gcloud-adc/browser-profile` | プロファイルの置き場所 |
+
+Chrome が見つからない場合は自動的に既定ブラウザにフォールバックする。
 
 ### 必要スコープの設定
 
@@ -95,7 +114,7 @@ check-gcloud-adc --reset
 通知をクリックする代わりに、URL スキームで直接アクションを実行できます。
 
 ```bash
-# 再認証（ブラウザが開きます）
+# 再認証（専用の Chrome ウィンドウが開き、終わると閉じます）
 open check-gcloud-adc://reauth
 
 # リポジトリを開く
