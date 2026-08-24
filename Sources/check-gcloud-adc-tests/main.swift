@@ -278,6 +278,59 @@ test("browser: wrapped command preserves the exit code and cleans up") {
     assert(!FileManager.default.fileExists(atPath: session.shimDir), "shim dir must be removed")
 }
 
+test("browser: default extension is 1Password, empty env opens nothing") {
+    assert(Browser.resolveExtensions([:]) == Browser.defaultExtensions, "expected the default extension list")
+    assert(Browser.defaultExtensions == ["aeblfdkhhhdcdjpifhhbdiojplfjncoa"], "expected the 1Password extension id")
+    assert(Browser.resolveExtensions(["CHECK_GCLOUD_ADC_BROWSER_EXTENSIONS": ""]).isEmpty, "empty env must open nothing")
+    let two = Browser.resolveExtensions(["CHECK_GCLOUD_ADC_BROWSER_EXTENSIONS": "aaa, bbb"])
+    assert(two == ["aaa", "bbb"], "unexpected parse: \(two)")
+}
+
+test("browser: setup pages open only for extensions that are missing") {
+    let missing = Browser.setupURLs(profile: "/tmp/p", environment: [:]) { _ in false }
+    assert(missing == ["https://chromewebstore.google.com/detail/aeblfdkhhhdcdjpifhhbdiojplfjncoa"], "unexpected: \(missing)")
+    let installed = Browser.setupURLs(profile: "/tmp/p", environment: [:]) { _ in true }
+    assert(installed.isEmpty, "must stop nagging once installed: \(installed)")
+}
+
+test("browser: shim opens setup pages as extra tabs, auth URL first") {
+    let script = Browser.shimScript(
+        executable: "/tmp/Chrome",
+        profile: "/tmp/prof",
+        setupURLs: ["https://example.com/ext"]
+    )
+    assert(
+        script.contains("--new-window \"$url\" 'https://example.com/ext'"),
+        "setup pages must follow the auth URL: \(script)"
+    )
+    let bare = Browser.shimScript(executable: "/tmp/Chrome", profile: "/tmp/prof")
+    assert(bare.contains("--new-window \"$url\" >"), "no setup pages means no extra args: \(bare)")
+}
+
+test("browser: makeSession links native messaging hosts into the profile") {
+    let dir = NSTemporaryDirectory() + "check-gcloud-adc-nmh-test-\(getpid())"
+    let fakeHome = dir + "/home"
+    let hosts = fakeHome + "/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+    try? FileManager.default.createDirectory(atPath: hosts, withIntermediateDirectories: true)
+    try? "{}".write(toFile: hosts + "/com.1password.1password.json", atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(atPath: dir) }
+
+    guard let session = Browser.makeSession([
+        "CHECK_GCLOUD_ADC_BROWSER": "/bin/echo",
+        "CHECK_GCLOUD_ADC_BROWSER_PROFILE": dir + "/profile",
+        "HOME": fakeHome,
+    ]) else {
+        assert(false, "expected a session")
+        return
+    }
+    defer { try? FileManager.default.removeItem(atPath: session.shimDir) }
+
+    let linked = session.profile + "/NativeMessagingHosts/com.1password.1password.json"
+    assert(FileManager.default.fileExists(atPath: linked), "1Password manifest must be reachable from the profile")
+    // 拡張機能が未導入なのでストアページが付く。
+    assert(session.setupURLs.count == 1, "expected the 1Password store page: \(session.setupURLs)")
+}
+
 test("browser: makeSession returns nil when disabled") {
     assert(Browser.makeSession(["CHECK_GCLOUD_ADC_BROWSER": ""]) == nil, "empty env must disable the shim")
 }

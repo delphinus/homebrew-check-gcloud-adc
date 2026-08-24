@@ -17,17 +17,27 @@ Google Cloud の Application Default Credentials (ADC) トークンの有効性�
 再認証は**専用プロファイルの Chrome ウィンドウ**で行う。既定ブラウザに任せると「最後に使ったウィンドウ / プロファイル」に認証タブが生えるため、どのプロファイルで認証したかがブレるうえ、終わってもタブが残るのを避けるため。
 
 - `--user-data-dir` を固定パス（既定 `${XDG_CACHE_HOME:-~/.cache}/check-gcloud-adc/browser-profile`）にした Chrome インスタンスで開く。普段使いの Chrome とは別プロセス・別プロファイルなので、既存ウィンドウを再利用しない。
-- プロファイルのディレクトリは残るので、Google のログインセッションは次回の再認証に引き継がれる。作り直したいときはディレクトリごと削除する。
+- プロファイルのディレクトリは残るので、Google のログインセッションと拡張機能は次回の再認証に引き継がれる。作り直したいときはディレクトリごと削除する。
 - gcloud が終わったら、その `--user-data-dir` を持つプロセスだけを終了させる。gcloud が途中で落ちた場合もウィンドウは残らない。
 
 gcloud へは `$BROWSER` と、`PATH` に差し込んだ `open` の 2 経路で渡している。前者は gcloud が使う Python の `webbrowser` モジュールが、後者は `open <url>` を直に叩く実装が拾う。
 
 Safari を使わないのは、Safari 17+ のプロファイルを CLI や AppleScript から指定する手段が無く、「どのプロファイルで開くか」を固定できないため。`open -na Safari` も複数インスタンスにはならず、既存ウィンドウを前面化するだけになる。
 
+#### パスワードマネージャ（1Password）
+
+拡張機能は user-data-dir の中のプロファイル単位なので、専用プロファイルは素のままだと 1Password も入っていない。`invalid_rapt` による再認証は Google がパスワードや 2 要素をその都度要求してくるため、パスワードマネージャが使えないと毎回手打ちになり、ドメイン照合による phishing 耐性も TOTP の自動入力も失われる。専用ウィンドウにした結果セキュリティが下がっては本末転倒なので、次の 2 つを行う。
+
+- **未導入の拡張機能があれば、そのインストールページを認証 URL と同じウィンドウの別タブで開く。** 既定は 1Password。認証タブは常に 1 番目のタブに開く。
+- **native messaging の manifest を専用プロファイルから引けるようにする。** 1Password 拡張はデスクトップアプリと native messaging で話すが、その manifest は既定の Chrome の場所（`~/Library/Application Support/Google/Chrome/NativeMessagingHosts`）にしか置かれない。専用プロファイル配下に symlink を張って、Chrome がどちらのパスを見る実装でも届くようにする。
+
+初回に一度だけ、開いたストアページから拡張機能を入れてデスクトップアプリとの連携を承認すれば、プロファイルが永続なので以後ずっと効く。Google へのログインも同様に初回だけ。導入が済めばストアページは開かなくなる（「新規プロファイルか」ではなく「実際に入っているか」で判断するため、既に作ってしまった素のプロファイルも次の再認証で拾える）。
+
 | 環境変数 | 既定 | 用途 |
 |---|---|---|
 | `CHECK_GCLOUD_ADC_BROWSER` | Google Chrome の実行ファイル | Chromium 系の別ブラウザ（Brave、Edge、Chrome Canary 等）の実行ファイルパス。**空文字を設定すると専用ウィンドウを使わず、既定ブラウザに任せる** |
 | `CHECK_GCLOUD_ADC_BROWSER_PROFILE` | `${XDG_CACHE_HOME:-~/.cache}/check-gcloud-adc/browser-profile` | プロファイルの置き場所 |
+| `CHECK_GCLOUD_ADC_BROWSER_EXTENSIONS` | 1Password（`aeblfdkhhhdcdjpifhhbdiojplfjncoa`） | 未導入ならインストールページを開く拡張機能の ID（カンマまたは空白区切り）。**空文字を設定すると何も開かない** |
 
 Chrome が見つからない場合は自動的に既定ブラウザにフォールバックする。
 

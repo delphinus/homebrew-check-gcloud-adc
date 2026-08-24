@@ -9,9 +9,22 @@ import Foundation
 ///
 /// - `--user-data-dir` を固定パスにした Chrome インスタンスで開く。普段使いの
 ///   Chrome とは別プロセス・別プロファイルになるので、既存ウィンドウを再利用しない。
-/// - プロファイルのディレクトリ自体は残すので、Google のログインセッションは
-///   次回の再認証に引き継がれる (= プロファイルが固定される)。
+/// - プロファイルのディレクトリ自体は残すので、Google のログインセッションと
+///   拡張機能は次回の再認証に引き継がれる (= プロファイルが固定される)。
 /// - gcloud が終わったら、その `--user-data-dir` を持つプロセスだけを終了させる。
+///
+/// 拡張機能は user-data-dir の中のプロファイル単位なので、専用プロファイルは
+/// 素のままだと 1Password も入っていない。Google の再認証 (`invalid_rapt`) は
+/// パスワードや 2 要素をその都度要求してくるため、パスワードマネージャが使えないと
+/// 手打ちを強いられ、ドメイン照合による phishing 耐性も失われる。そこで、
+///
+/// - 必要な拡張機能がまだ入っていなければ、そのインストールページを認証 URL と
+///   一緒に開く (既定は 1Password。`CHECK_GCLOUD_ADC_BROWSER_EXTENSIONS` で変更可)
+/// - 1Password デスクトップアプリとの連携に要る native messaging の manifest が
+///   専用プロファイルからも引けるよう、既定の Chrome のものへ symlink を張る
+///
+/// を行う。拡張機能の導入とデスクトップアプリの承認は初回に一度だけ手で行えば、
+/// プロファイルが永続なので以後ずっと効く。
 ///
 /// gcloud へは 2 経路で渡す。どちらの流儀の実装でも拾えるようにするため:
 ///
@@ -29,8 +42,20 @@ public enum Browser {
     /// プロファイル (`--user-data-dir`) の置き場所の上書き。
     public static let profileEnvKey = "CHECK_GCLOUD_ADC_BROWSER_PROFILE"
 
+    /// 専用プロファイルに入っていなければインストールページを開く拡張機能の ID
+    /// (カンマ / 空白区切り)。空文字を設定すると何も開かない。
+    public static let extensionsEnvKey = "CHECK_GCLOUD_ADC_BROWSER_EXTENSIONS"
+
     /// 既定の実行ファイル。
     public static let defaultExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+    /// 既定でインストールを促す拡張機能。1Password – パスワード保管庫。
+    public static let defaultExtensions = ["aeblfdkhhhdcdjpifhhbdiojplfjncoa"]
+
+    /// 既定の Chrome が native messaging の manifest を置く場所。`--user-data-dir`
+    /// を変えても Chrome はここを見る実装だが、user-data-dir 相対に見る版もあるため
+    /// 専用プロファイル側に symlink を張って両方に備える。
+    public static let nativeMessagingHostsDirName = "NativeMessagingHosts"
 
     /// gcloud 終了後、ウィンドウを閉じるまでの猶予 (秒)。最後のリダイレクトを
     /// 取りこぼさないための保険。
@@ -40,10 +65,13 @@ public enum Browser {
     public struct Session {
         public let shimDir: String
         public let profile: String
+        /// 認証 URL と一緒に開くセットアップ用ページ (未導入の拡張機能のストアページ)。
+        public let setupURLs: [String]
 
-        public init(shimDir: String, profile: String) {
+        public init(shimDir: String, profile: String, setupURLs: [String] = []) {
             self.shimDir = shimDir
             self.profile = profile
+            self.setupURLs = setupURLs
         }
     }
 
@@ -74,9 +102,57 @@ public enum Browser {
         return (base as NSString).appendingPathComponent("check-gcloud-adc/browser-profile")
     }
 
+    /// インストールを促す拡張機能の ID を解決する。空文字が入っていれば空配列。
+    public static func resolveExtensions(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String] {
+        guard let raw = environment[extensionsEnvKey] else { return defaultExtensions }
+        return raw
+            .split(whereSeparator: { $0 == "," || $0 == " " })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Chrome ウェブストアの拡張機能ページ。ID だけでも正規 URL にリダイレクトされる。
+    public static func extensionStoreURL(_ identifier: String) -> String {
+        "https://chromewebstore.google.com/detail/\(identifier)"
+    }
+
+    /// プロファイルにまだ入っていない拡張機能のストアページを返す。
+    ///
+    /// 「新規プロファイルか」ではなく「実際に入っているか」で判断するので、
+    /// 既に作ってしまった素のプロファイルも次の再認証で拾える。導入が済めば
+    /// 開かなくなる。開かれたくない場合は `CHECK_GCLOUD_ADC_BROWSER_EXTENSIONS`
+    /// に空文字を設定する。
+    public static func setupURLs(
+        profile: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        isInstalled: (String) -> Bool
+    ) -> [String] {
+        resolveExtensions(environment)
+            .filter { !isInstalled($0) }
+            .map(extensionStoreURL)
+    }
+
+    /// 専用プロファイル (`--user-data-dir` 直下の `Default`) に拡張機能が入っているか。
+    static func isExtensionInstalled(profile: String, identifier: String) -> Bool {
+        let path = (profile as NSString)
+            .appendingPathComponent("Default/Extensions/\(identifier)")
+        return FileManager.default.fileExists(atPath: path)
+    }
+
     /// shim スクリプトの中身。
-    public static func shimScript(executable: String, profile: String) -> String {
-        """
+    ///
+    /// - Parameter setupURLs: 認証 URL と一緒に開くセットアップ用のページ。同じ
+    ///   ウィンドウの別タブとして開く。認証 URL を先に置いてあるので、どちらが
+    ///   手前になっても認証タブは必ず 1 番目のタブにいる。
+    public static func shimScript(
+        executable: String,
+        profile: String,
+        setupURLs: [String] = []
+    ) -> String {
+        let extra = setupURLs.isEmpty ? "" : " " + setupURLs.map(quote).joined(separator: " ")
+        return """
         #!/bin/sh
         # check-gcloud-adc が再認証中だけ gcloud に使わせるブラウザ。
         # 引数のうち URL に見えるものだけを拾う (`open -a Foo <url>` 形式の呼ばれ方対策)。
@@ -92,9 +168,40 @@ public enum Browser {
           --no-default-browser-check \\
           --no-service-autorun \\
           --hide-crash-restore-bubble \\
-          --new-window "$url" > /dev/null 2>&1 &
+          --new-window "$url"\(extra) > /dev/null 2>&1 &
         exit 0
         """
+    }
+
+    /// 専用プロファイルから native messaging の manifest を引けるようにする。
+    ///
+    /// 1Password 拡張はデスクトップアプリと native messaging で話すが、その manifest
+    /// (`com.1password.1password.json`) は既定の Chrome の場所にしか置かれていない。
+    /// Chrome が manifest をどちらのパスで探すかは版によって差があるため、
+    /// user-data-dir 相対の場所に symlink を張って取りこぼさないようにする。
+    @discardableResult
+    static func linkNativeMessagingHosts(
+        profile: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        let fm = FileManager.default
+        let home = environment["HOME"] ?? NSHomeDirectory()
+        let source = (home as NSString)
+            .appendingPathComponent("Library/Application Support/Google/Chrome/\(nativeMessagingHostsDirName)")
+        let destination = (profile as NSString).appendingPathComponent(nativeMessagingHostsDirName)
+
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: source, isDirectory: &isDirectory), isDirectory.boolValue else { return false }
+        // 既に何か置かれているなら触らない (利用者が自分で用意した場合を壊さない)。
+        guard !fm.fileExists(atPath: destination) else { return false }
+
+        do {
+            try fm.createSymbolicLink(atPath: destination, withDestinationPath: source)
+            return true
+        } catch {
+            fputs("could not link native messaging hosts: \(error.localizedDescription)\n", stderr)
+            return false
+        }
     }
 
     /// gcloud のコマンドを shim 込みに包む。
@@ -140,6 +247,9 @@ public enum Browser {
         }
 
         let profile = resolveProfile(environment)
+        let setup = setupURLs(profile: profile, environment: environment) {
+            isExtensionInstalled(profile: profile, identifier: $0)
+        }
         let shimDir = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("check-gcloud-adc-browser-\(UUID().uuidString)")
         let opener = (shimDir as NSString).appendingPathComponent("open-url")
@@ -151,7 +261,7 @@ public enum Browser {
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700]
             )
-            try shimScript(executable: executable, profile: profile)
+            try shimScript(executable: executable, profile: profile, setupURLs: setup)
                 .write(toFile: opener, atomically: true, encoding: .utf8)
             try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: opener)
             // `open <url>` を直に叩く実装向けに PATH 上の open も差し替える。
@@ -165,7 +275,10 @@ public enum Browser {
             return nil
         }
 
-        return Session(shimDir: shimDir, profile: profile)
+        // 1Password 等がデスクトップアプリと話せるようにする。失敗しても続行する。
+        linkNativeMessagingHosts(profile: profile, environment: environment)
+
+        return Session(shimDir: shimDir, profile: profile, setupURLs: setup)
     }
 
     /// sh の単一引用符で囲む。
