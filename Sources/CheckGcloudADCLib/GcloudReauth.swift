@@ -32,6 +32,8 @@ public enum GcloudReauth {
     static func run(account: String? = nil) -> Process? {
         let environment = ProcessInfo.processInfo.environment
         var script = command(account: account, environment: environment)
+        // 完了ページを localhost で止める。SDK の更新で元に戻るので毎回当て直す。
+        LandingPage.apply(environment)
         if Browser.resolveExecutable(environment) != nil {
             Browser.terminateStaleSessions(profile: Browser.resolveProfile(environment))
         }

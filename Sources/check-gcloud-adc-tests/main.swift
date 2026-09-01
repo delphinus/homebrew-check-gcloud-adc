@@ -505,6 +505,162 @@ test("browser: makeSession writes an executable shim and an open symlink") {
     assert(task.terminationStatus == 0, "shim must exit 0, got \(task.terminationStatus)")
 }
 
+/// gcloud の完了ページを模した HTML。リダイレクトの 2 つと、その裏に隠れている
+/// 静的な完了ページを持つ最小構成。
+func makeLandingHTML() -> String {
+    """
+    <!DOCTYPE HTML>
+    <html lang="en-US">
+      <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="refresh" content="0;url=https://cloud.google.com/sdk/auth_success">
+        <script type="text/javascript">
+          window.location.href = "https://cloud.google.com/sdk/auth_success"
+        </script>
+        <title>Authentication Successful - Google Cloud SDK</title>
+      </head>
+      <body>
+        <p>You are now authenticated with the Google Cloud SDK.</p>
+      </body>
+    </html>
+    """
+}
+
+test("landing: drops both redirects and keeps the success page") {
+    guard let patched = LandingPage.redirectRemoved(from: makeLandingHTML()) else {
+        assert(false, "expected the page to be rewritten")
+        return
+    }
+    assert(!patched.contains("http-equiv=\"refresh\""), "meta refresh must be gone: \(patched)")
+    assert(!patched.contains("window.location"), "the redirect script must be gone: \(patched)")
+    assert(!patched.contains("cloud.google.com"), "nothing may point at cloud.google.com: \(patched)")
+    // 残るのは最後の画面として見せたい静的なページ。
+    assert(patched.contains(LandingPage.fallbackMarker), "the success text must survive: \(patched)")
+    assert(patched.contains("<meta charset=\"UTF-8\">"), "unrelated meta tags must survive: \(patched)")
+}
+
+test("landing: rewriting is idempotent") {
+    let patched = LandingPage.redirectRemoved(from: makeLandingHTML())
+    assert(patched != nil, "expected the first pass to rewrite")
+    assert(LandingPage.redirectRemoved(from: patched!) == nil, "a patched page must be left alone")
+}
+
+test("landing: refuses to rewrite a page without the success text") {
+    // 目印が無いページからリダイレクトだけ抜くと真っ白になる。触らないこと。
+    let html = """
+    <html><head>
+    <meta http-equiv="refresh" content="0;url=https://cloud.google.com/sdk/auth_success">
+    </head><body></body></html>
+    """
+    assert(LandingPage.redirectRemoved(from: html) == nil, "must not blank out the page")
+}
+
+test("landing: leaves unrelated script blocks alone") {
+    let html = """
+    <html><head>
+    <script type="text/javascript">var keep = 1;</script>
+    <script type="text/javascript">window.location.href = "https://cloud.google.com/sdk/auth_success"</script>
+    </head><body><p>You are now authenticated with the Google Cloud SDK.</p></body></html>
+    """
+    guard let patched = LandingPage.redirectRemoved(from: html) else {
+        assert(false, "expected the page to be rewritten")
+        return
+    }
+    assert(patched.contains("var keep = 1;"), "unrelated scripts must survive: \(patched)")
+    assert(!patched.contains("window.location"), "the redirect script must be gone: \(patched)")
+}
+
+test("landing: empty env disables the rewrite") {
+    assert(LandingPage.isEnabled([:]), "enabled by default")
+    assert(!LandingPage.isEnabled(["CHECK_GCLOUD_ADC_LANDING_PAGE": "  "]), "empty env must disable it")
+    assert(!LandingPage.apply(["CHECK_GCLOUD_ADC_LANDING_PAGE": ""], locate: { nil }), "disabled means no write")
+}
+
+test("landing: sdk root comes from the bin/ above gcloud") {
+    assert(
+        LandingPage.sdkRoot(fromExecutable: "/opt/homebrew/share/google-cloud-sdk/bin/gcloud")
+            == "/opt/homebrew/share/google-cloud-sdk",
+        "unexpected root"
+    )
+    assert(LandingPage.sdkRoot(fromExecutable: "/usr/local/gcloud") == nil, "must sit under bin/")
+    assert(LandingPage.sdkRoot(fromExecutable: "/bin/gcloud") == nil, "the root may not be /")
+}
+
+test("landing: candidates prefer the env root, then the resolved gcloud") {
+    let fromEnv = LandingPage.candidates(
+        ["CHECK_GCLOUD_ADC_SDK_ROOT": "/tmp/sdk"],
+        executable: "/opt/homebrew/share/google-cloud-sdk/bin/gcloud"
+    )
+    assert(fromEnv.first == "/tmp/sdk/" + LandingPage.relativePath, "env must win: \(fromEnv)")
+    assert(fromEnv.count == 2, "the gcloud path must remain a fallback: \(fromEnv)")
+
+    let fromPath = LandingPage.candidates([:], executable: "/opt/homebrew/share/google-cloud-sdk/bin/gcloud")
+    assert(
+        fromPath == ["/opt/homebrew/share/google-cloud-sdk/" + LandingPage.relativePath],
+        "unexpected candidates: \(fromPath)"
+    )
+    assert(LandingPage.candidates([:], executable: nil).isEmpty, "no gcloud means no candidates")
+}
+
+test("landing: apply rewrites the file, keeps its mode, and runs twice safely") {
+    let root = NSTemporaryDirectory() + "check-gcloud-adc-landing-test-\(getpid())"
+    let path = LandingPage.page(inSDKRoot: root)
+    let fm = FileManager.default
+    try? fm.createDirectory(
+        atPath: (path as NSString).deletingLastPathComponent,
+        withIntermediateDirectories: true
+    )
+    try? makeLandingHTML().write(toFile: path, atomically: true, encoding: .utf8)
+    try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path)
+    defer { try? fm.removeItem(atPath: root) }
+
+    let env = ["CHECK_GCLOUD_ADC_SDK_ROOT": root]
+    assert(LandingPage.apply(env, locate: { nil }), "expected the first run to rewrite")
+    let after = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    assert(!after.contains("cloud.google.com"), "the redirect must be gone from the file: \(after)")
+    assert(after.contains(LandingPage.fallbackMarker), "the success text must survive: \(after)")
+    let mode = (try? fm.attributesOfItem(atPath: path))?[.posixPermissions] as? NSNumber
+    assert(mode?.int16Value == 0o644, "the file mode must be kept: \(String(describing: mode))")
+
+    // 2 回目は書き換えるものが無い。SDK が更新されるまでは no-op。
+    assert(!LandingPage.apply(env, locate: { nil }), "expected the second run to be a no-op")
+}
+
+test("landing: handles the page shipped by the installed sdk") {
+    // 手元に SDK があれば、実物の HTML をコピーして通す。Google が中身を変えた
+    // ときに気付けるようにするためで、SDK が無い環境 (CI) では黙って飛ばす。
+    let fm = FileManager.default
+    guard let gcloud = LandingPage.locateGcloud(),
+          let installed = LandingPage.candidates([:], executable: gcloud)
+            .first(where: { fm.fileExists(atPath: $0) }),
+          let original = try? String(contentsOfFile: installed, encoding: .utf8)
+    else {
+        print("    (skipped: no local Google Cloud SDK)")
+        return
+    }
+
+    let root = NSTemporaryDirectory() + "check-gcloud-adc-landing-real-\(getpid())"
+    let copy = LandingPage.page(inSDKRoot: root)
+    try? fm.createDirectory(
+        atPath: (copy as NSString).deletingLastPathComponent,
+        withIntermediateDirectories: true
+    )
+    try? original.write(toFile: copy, atomically: true, encoding: .utf8)
+    defer { try? fm.removeItem(atPath: root) }
+
+    // 既に当たっている手元の SDK では no-op になるので、そこは結果を問わない。
+    LandingPage.apply(["CHECK_GCLOUD_ADC_SDK_ROOT": root], locate: { nil })
+    let after = (try? String(contentsOfFile: copy, encoding: .utf8)) ?? ""
+    assert(!after.contains("window.location"), "the installed page must lose its redirect script")
+    assert(!after.contains("http-equiv=\"refresh\""), "the installed page must lose its meta refresh")
+    assert(after.contains(LandingPage.fallbackMarker), "the installed page must keep its success text")
+}
+
+test("landing: apply is a no-op when the sdk is not there") {
+    let missing = ["CHECK_GCLOUD_ADC_SDK_ROOT": NSTemporaryDirectory() + "check-gcloud-adc-no-such-sdk"]
+    assert(!LandingPage.apply(missing, locate: { nil }), "a missing sdk must not be an error")
+}
+
 test("test: sends test notification") {
     let (app, n, _, _) = makeTestApp()
 

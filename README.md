@@ -9,7 +9,7 @@ Google Cloud の Application Default Credentials (ADC) トークンの有効性�
 - 無効・スコープ不足の場合、macOS のネイティブ通知を送信（1 回のみ、再認証まで重複しない）
 - 通知クリックで再認証を実行（専用の Chrome ウィンドウが開いて認証）
   - ADC: `gcloud auth application-default login --scopes=<必要スコープ>` — 必要スコープを常に付与するため、他の `gcloud auth application-default login`（スコープ無し）に上書きされても復旧できる
-  - 名前付きアカウント: `gcloud auth login --update-adc <account>`
+  - 名前付きアカウント: `gcloud auth login <account>` に続けて上と同じ ADC の設定を行う。`gcloud auth login` は `--scopes` を受け付けず、`--update-adc` は既定スコープで ADC を上書きしてしまうので、ADC 側は必ず `application-default login --scopes=...` で設定する
 - `brew services` により 5 分間隔で自動実行
 
 ### 再認証に使うブラウザ
@@ -44,6 +44,20 @@ Safari を使わないのは、Safari 17+ のプロファイルを CLI や Apple
 
 `CHECK_GCLOUD_ADC_BROWSER_WINDOW` で `幅x高さ` を指定できる。空文字を設定すると大きさも位置も指定せず、Chrome がプロファイルに覚えている前回のウィンドウをそのまま使う。
 
+#### 認証後の最後の画面
+
+gcloud はローカルのコールバックで認可コードを受け取ると、完了ページ（`lib/googlecloudsdk/core/credentials/oauth2_landing.html`）を返して `https://cloud.google.com/sdk/auth_success` へリダイレクトする。**再認証のたびに、この HTML からリダイレクトの 2 行（meta refresh と `window.location.href`）を外す。**
+
+VPN のような共有 IP から出ていると、リダイレクトの先に Google の bot チェック（`/sorry/index` の CAPTCHA）が挟まる。認証はコードを受け取った時点で済んでいるため gcloud はそのまま終了し、こちらは終了直後にウィンドウを閉じるので、**CAPTCHA が出た瞬間に窓が消えた**ように見える。ウィンドウを閉じるまでの猶予はリダイレクトを取りこぼさないためのもので、CAPTCHA を解く時間ではない（伸ばしても行き止まりが長く映るだけ）。
+
+リダイレクトを外すと、同じファイルに入っている静的な完了ページ（「You are now authenticated with the Google Cloud SDK.」）がそのまま最後の画面になる。`cloud.google.com` へのリクエストが無くなるので CAPTCHA は原理的に出ない。
+
+- gcloud はこのレスポンスの中身を読まない（`flow.py` は本文を返す前に認可コードを確定させている）ので、認証の挙動は変わらない。
+- SDK は Homebrew や `gcloud components update` の管理下にあり、更新のたびに元へ戻る。そのため毎回冪等に当て直す。既に当たっていれば何もしない。
+- 目印の「You are now authenticated」が見当たらないページは書き換えない。将来 Google が中身を変えたときに、リダイレクトだけ外して真っ白な画面を作らないため。
+- SDK が見つからない・書き込めない場合は黙って諦め、再認証はそのまま続行する。
+- 元に戻すには `gcloud components reinstall`、または `CHECK_GCLOUD_ADC_LANDING_PAGE` に空文字を設定する。
+
 #### パスワードマネージャ（1Password）
 
 拡張機能は user-data-dir の中のプロファイル単位なので、専用プロファイルは素のままだと 1Password も入っていない。`invalid_rapt` による再認証は Google がパスワードや 2 要素をその都度要求してくるため、パスワードマネージャが使えないと毎回手打ちになり、ドメイン照合による phishing 耐性も TOTP の自動入力も失われる。専用ウィンドウにした結果セキュリティが下がっては本末転倒なので、次の 2 つを行う。
@@ -59,6 +73,8 @@ Safari を使わないのは、Safari 17+ のプロファイルを CLI や Apple
 | `CHECK_GCLOUD_ADC_BROWSER_PROFILE` | `${XDG_CACHE_HOME:-~/.cache}/check-gcloud-adc/browser-profile` | プロファイルの置き場所 |
 | `CHECK_GCLOUD_ADC_BROWSER_EXTENSIONS` | 1Password（`aeblfdkhhhdcdjpifhhbdiojplfjncoa`） | 未導入ならインストールページを開く拡張機能の ID（カンマまたは空白区切り）。**空文字を設定すると何も開かない** |
 | `CHECK_GCLOUD_ADC_BROWSER_WINDOW` | `600x800` | ウィンドウの大きさ（`幅x高さ`）。マウスのある画面の中央に出す。**空文字を設定すると指定せず、Chrome が覚えている前回のウィンドウを使う** |
+| `CHECK_GCLOUD_ADC_LANDING_PAGE` | 有効 | **空文字を設定すると完了ページを書き換えず**、`cloud.google.com` へのリダイレクトを残す |
+| `CHECK_GCLOUD_ADC_SDK_ROOT` | PATH 上の `gcloud` から解決 | Google Cloud SDK のルート。完了ページの位置を決めるのに使う |
 
 Chrome が見つからない場合は自動的に既定ブラウザにフォールバックする。
 
